@@ -1,0 +1,11 @@
+{
+  "name": "rechecker-plugin",
+  "version": "1.0.0",
+  "description": "Automatically reviews and fixes Claude's code changes using a separate Claude instance in a git worktree after commits",
+  "author": {
+    "name": "Emasoft",
+    "url": "https://github.com/Emasoft"
+  },
+  "license": "MIT",
+  "hooks": "./hooks/hooks.json"
+}

@@ -1,0 +1,253 @@
+#!/usr/bin/env bash
+# review-loop.sh - Core review loop
+# Creates worktrees, runs headless Claude for review, merges fixes, iterates
+set -euo pipefail
+
+# ── Parameters ──────────────────────────────────────────────────
+PROJECT_DIR="$1"
+COMMIT_SHA="$2"
+CURRENT_BRANCH="$3"
+REPORTS_DIR="$4"
+TIMESTAMP="$5"
+PLUGIN_ROOT="$6"
+
+MAX_PASSES=5
+WORKTREE_BASE="${PROJECT_DIR}/.rechecker/worktrees"
+AGENT_FILE="${PLUGIN_ROOT}/agents/code-reviewer.md"
+
+mkdir -p "$WORKTREE_BASE"
+
+# ── State tracking ──────────────────────────────────────────────
+TOTAL_ISSUES_FOUND=0
+TOTAL_ISSUES_FIXED=0
+PASS_SUMMARIES=""
+FINAL_STATUS="unknown"
+# Track the HEAD before each pass so we know what diff to review next
+DIFF_BASE_SHA="${COMMIT_SHA}"
+
+# ── Helper: clean up a worktree and its branch ──────────────────
+cleanup_worktree() {
+    local wt_path="$1"
+    local branch_name="$2"
+    cd "$PROJECT_DIR"
+    git worktree remove --force "$wt_path" 2>/dev/null || rm -rf "$wt_path"
+    git branch -D "$branch_name" 2>/dev/null || true
+}
+
+# ── Main loop ───────────────────────────────────────────────────
+for PASS_NUM in $(seq 1 $MAX_PASSES); do
+    BRANCH_NAME="rechecker-pass-${PASS_NUM}-${TIMESTAMP}"
+    WORKTREE_PATH="${WORKTREE_BASE}/pass-${PASS_NUM}"
+    REPORT_FILE="${REPORTS_DIR}/rechecker_${TIMESTAMP}_pass${PASS_NUM}.md"
+
+    # ── Clean up any leftover worktree/branch at this path ──────
+    if [ -d "$WORKTREE_PATH" ]; then
+        cleanup_worktree "$WORKTREE_PATH" "$BRANCH_NAME"
+    fi
+    cd "$PROJECT_DIR"
+    git branch -D "$BRANCH_NAME" 2>/dev/null || true
+
+    # ── Create worktree ─────────────────────────────────────────
+    cd "$PROJECT_DIR"
+    if ! git worktree add "$WORKTREE_PATH" -b "$BRANCH_NAME" HEAD 2>/dev/null; then
+        FINAL_STATUS="error: failed to create worktree for pass ${PASS_NUM}"
+        PASS_SUMMARIES="${PASS_SUMMARIES}Pass ${PASS_NUM}: ERROR - failed to create worktree. "
+        break
+    fi
+
+    # ── Generate the diff to review ─────────────────────────────
+    cd "$PROJECT_DIR"
+    DIFF_CONTENT=""
+    COMMIT_MSG=""
+
+    if [ "$PASS_NUM" -eq 1 ]; then
+        # First pass: diff of the triggering commit
+        # Handle first commit in repo (no parent)
+        DIFF_CONTENT=$(git diff "${COMMIT_SHA}~1..${COMMIT_SHA}" 2>/dev/null || \
+                       git show "${COMMIT_SHA}" --format="" 2>/dev/null || \
+                       echo "ERROR: Unable to generate diff for commit ${COMMIT_SHA}")
+        COMMIT_MSG=$(git log -1 --format="%s" "${COMMIT_SHA}" 2>/dev/null || echo "Unknown")
+    else
+        # Subsequent passes: diff of what the previous merge introduced
+        DIFF_CONTENT=$(git diff "${DIFF_BASE_SHA}..HEAD" 2>/dev/null || \
+                       echo "ERROR: Unable to generate diff between ${DIFF_BASE_SHA} and HEAD")
+        COMMIT_MSG="Rechecker pass $((PASS_NUM - 1)) fixes"
+    fi
+
+    # Skip if diff is empty (no actual code changes)
+    if [ -z "$DIFF_CONTENT" ] || [ "$DIFF_CONTENT" = "" ]; then
+        FINAL_STATUS="clean"
+        PASS_SUMMARIES="${PASS_SUMMARIES}Pass ${PASS_NUM}: No changes to review. "
+        cleanup_worktree "$WORKTREE_PATH" "$BRANCH_NAME"
+        break
+    fi
+
+    # Save diff to a file in the worktree for the review agent to read
+    DIFF_FILE="${WORKTREE_PATH}/.rechecker_diff.patch"
+    echo "$DIFF_CONTENT" > "$DIFF_FILE"
+
+    # ── Build the prompt for headless Claude ────────────────────
+    # Keep the prompt concise - the agent definition has the full instructions
+    REVIEW_PROMPT="Review the code changes in the diff file at: ${DIFF_FILE}
+
+Commit message: ${COMMIT_MSG}
+Commit SHA: ${COMMIT_SHA}
+This is review pass ${PASS_NUM} of ${MAX_PASSES}.
+
+Save your review report to: ${REPORT_FILE}
+
+After fixing all issues, commit your changes with:
+git add -A && git commit -m 'rechecker: pass ${PASS_NUM} fixes'
+
+If you find no issues, do NOT create a commit - just write the report with ISSUES_FOUND: 0"
+
+    # ── Run headless Claude with the code-reviewer agent ────────
+    cd "$WORKTREE_PATH"
+
+    # Run claude in headless mode with the code-reviewer agent
+    # --permission-mode acceptEdits: auto-accept file edits (safe in ephemeral worktree)
+    claude --agent "$AGENT_FILE" \
+        -p "$REVIEW_PROMPT" \
+        --permission-mode acceptEdits \
+        --no-session-persistence \
+        2>/dev/null || true
+
+    # ── Parse the report ────────────────────────────────────────
+    ISSUES_FOUND=0
+    ISSUES_FIXED=0
+
+    if [ -f "$REPORT_FILE" ]; then
+        # Extract ISSUES_FOUND: N from report
+        FOUND_LINE=$(grep -i "^ISSUES_FOUND:" "$REPORT_FILE" 2>/dev/null | tail -1 || echo "")
+        if [ -n "$FOUND_LINE" ]; then
+            ISSUES_FOUND=$(echo "$FOUND_LINE" | grep -oE '[0-9]+' | head -1 || echo "0")
+            ISSUES_FOUND="${ISSUES_FOUND:-0}"
+        fi
+
+        # Extract ISSUES_FIXED: N from report
+        FIXED_LINE=$(grep -i "^ISSUES_FIXED:" "$REPORT_FILE" 2>/dev/null | tail -1 || echo "")
+        if [ -n "$FIXED_LINE" ]; then
+            ISSUES_FIXED=$(echo "$FIXED_LINE" | grep -oE '[0-9]+' | head -1 || echo "0")
+            ISSUES_FIXED="${ISSUES_FIXED:-0}"
+        fi
+    else
+        # No report file created - the review agent may have failed
+        # Create a minimal report noting the failure
+        mkdir -p "$(dirname "$REPORT_FILE")"
+        {
+            echo "# Rechecker Review Report - Pass ${PASS_NUM}"
+            echo ""
+            echo "**Date**: $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "**Commit**: ${COMMIT_SHA:0:8}"
+            echo ""
+            echo "## Summary"
+            echo "Review agent did not produce a report file. The agent may have encountered an error."
+            echo ""
+            echo "ISSUES_FOUND: 0"
+            echo "ISSUES_FIXED: 0"
+        } > "$REPORT_FILE"
+    fi
+
+    TOTAL_ISSUES_FOUND=$((TOTAL_ISSUES_FOUND + ISSUES_FOUND))
+    TOTAL_ISSUES_FIXED=$((TOTAL_ISSUES_FIXED + ISSUES_FIXED))
+    PASS_SUMMARIES="${PASS_SUMMARIES}Pass ${PASS_NUM}: ${ISSUES_FOUND} issues found, ${ISSUES_FIXED} fixed. Report: $(basename "$REPORT_FILE"). "
+
+    # ── If 0 issues found, we are done ──────────────────────────
+    if [ "$ISSUES_FOUND" -eq 0 ] 2>/dev/null; then
+        FINAL_STATUS="clean"
+        cleanup_worktree "$WORKTREE_PATH" "$BRANCH_NAME"
+        break
+    fi
+
+    # ── Issues found: check if reviewer committed fixes ─────────
+    cd "$WORKTREE_PATH"
+    WORKTREE_COMMITS=$(git log "${CURRENT_BRANCH}..${BRANCH_NAME}" --oneline 2>/dev/null | wc -l | tr -d ' ')
+
+    if [ "$WORKTREE_COMMITS" -eq 0 ] 2>/dev/null; then
+        # Reviewer found issues but did not commit any fixes
+        FINAL_STATUS="issues_reported_not_fixed"
+        PASS_SUMMARIES="${PASS_SUMMARIES}(No fixes committed by reviewer.) "
+        cleanup_worktree "$WORKTREE_PATH" "$BRANCH_NAME"
+        break
+    fi
+
+    # ── Merge fixes from worktree branch back into main ─────────
+    cd "$PROJECT_DIR"
+
+    # Verify working directory is clean before merging
+    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+        FINAL_STATUS="error: working directory not clean before merge at pass ${PASS_NUM}"
+        PASS_SUMMARIES="${PASS_SUMMARIES}(Merge skipped: dirty working directory.) "
+        cleanup_worktree "$WORKTREE_PATH" "$BRANCH_NAME"
+        break
+    fi
+
+    # Record HEAD before merge so we can diff against it in the next pass
+    DIFF_BASE_SHA=$(git rev-parse HEAD)
+
+    # Attempt the merge
+    if git merge --no-edit "$BRANCH_NAME" 2>/dev/null; then
+        PASS_SUMMARIES="${PASS_SUMMARIES}Fixes merged successfully. "
+    else
+        # Merge conflict - abort and report
+        git merge --abort 2>/dev/null || true
+        FINAL_STATUS="merge_conflict at pass ${PASS_NUM}"
+        PASS_SUMMARIES="${PASS_SUMMARIES}MERGE CONFLICT - manual resolution needed. "
+        cleanup_worktree "$WORKTREE_PATH" "$BRANCH_NAME"
+        break
+    fi
+
+    # ── Clean up this pass's worktree ───────────────────────────
+    cleanup_worktree "$WORKTREE_PATH" "$BRANCH_NAME"
+
+    # If this was the last allowed pass
+    if [ "$PASS_NUM" -eq "$MAX_PASSES" ]; then
+        FINAL_STATUS="max_passes_reached"
+    fi
+done
+
+# ── Clean up worktree base directory if empty ───────────────────
+rmdir "$WORKTREE_BASE" 2>/dev/null || true
+rmdir "${PROJECT_DIR}/.rechecker/worktrees" 2>/dev/null || true
+
+# ── Write final summary report ──────────────────────────────────
+SUMMARY_FILE="${REPORTS_DIR}/rechecker_${TIMESTAMP}_summary.md"
+{
+    echo "# Rechecker Summary"
+    echo ""
+    echo "**Date**: $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "**Trigger commit**: ${COMMIT_SHA:0:8}"
+    echo "**Branch**: ${CURRENT_BRANCH}"
+    echo "**Status**: ${FINAL_STATUS}"
+    echo "**Total issues found**: ${TOTAL_ISSUES_FOUND}"
+    echo "**Total issues fixed**: ${TOTAL_ISSUES_FIXED}"
+    echo ""
+    echo "## Pass Details"
+    # Split PASS_SUMMARIES by ". " and output as list items
+    echo "$PASS_SUMMARIES" | tr '.' '\n' | while read -r line; do
+        line=$(echo "$line" | sed 's/^[[:space:]]*//')
+        if [ -n "$line" ]; then
+            echo "- ${line}"
+        fi
+    done
+    echo ""
+    echo "## Report Files"
+    for f in "${REPORTS_DIR}"/rechecker_${TIMESTAMP}_pass*.md; do
+        if [ -f "$f" ]; then
+            echo "- $(basename "$f")"
+        fi
+    done
+} > "$SUMMARY_FILE"
+
+# ── Output summary to stdout (captured by rechecker.sh) ────────
+if [ "$FINAL_STATUS" = "clean" ]; then
+    echo "Review completed (${FINAL_STATUS}). ${TOTAL_ISSUES_FOUND} total issues found across all passes, ${TOTAL_ISSUES_FIXED} fixed. All code changes verified clean. Reports: ${REPORTS_DIR}/rechecker_${TIMESTAMP}_*.md"
+elif [ "$FINAL_STATUS" = "issues_reported_not_fixed" ]; then
+    echo "Review completed (${FINAL_STATUS}). ${TOTAL_ISSUES_FOUND} issues found but reviewer did not commit fixes. Please review the reports manually. Reports: ${REPORTS_DIR}/rechecker_${TIMESTAMP}_*.md"
+elif echo "$FINAL_STATUS" | grep -q "merge_conflict"; then
+    echo "Review completed with MERGE CONFLICT. ${TOTAL_ISSUES_FOUND} issues found, ${TOTAL_ISSUES_FIXED} fixed before conflict. Manual resolution needed. Reports: ${REPORTS_DIR}/rechecker_${TIMESTAMP}_*.md"
+elif [ "$FINAL_STATUS" = "max_passes_reached" ]; then
+    echo "Review completed (max ${MAX_PASSES} passes reached). ${TOTAL_ISSUES_FOUND} total issues found, ${TOTAL_ISSUES_FIXED} fixed. Some issues may remain. Reports: ${REPORTS_DIR}/rechecker_${TIMESTAMP}_*.md"
+else
+    echo "Review completed (${FINAL_STATUS}). ${TOTAL_ISSUES_FOUND} issues found, ${TOTAL_ISSUES_FIXED} fixed. Reports: ${REPORTS_DIR}/rechecker_${TIMESTAMP}_*.md"
+fi
