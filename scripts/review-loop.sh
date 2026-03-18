@@ -122,11 +122,11 @@ If you find no issues, do NOT create a commit - just write the report with ISSUE
     # The headless Claude writes the report inside the worktree (sandbox).
     # We copy it to the main project's reports_dev/ so it persists after
     # the worktree is destroyed.
-    ISSUES_FOUND=0
+    ISSUES_FOUND=-1
     ISSUES_FIXED=0
+    REPORT_HAS_MARKER=false
 
     if [ -f "$WT_REPORT_FILE" ]; then
-        # Copy report from worktree to reports_dev/
         cp "$WT_REPORT_FILE" "$REPORT_FILE"
     fi
 
@@ -134,6 +134,7 @@ If you find no issues, do NOT create a commit - just write the report with ISSUE
         # Extract ISSUES_FOUND: N from report
         FOUND_LINE=$(grep -i "^ISSUES_FOUND:" "$REPORT_FILE" 2>/dev/null | tail -1 || echo "")
         if [ -n "$FOUND_LINE" ]; then
+            REPORT_HAS_MARKER=true
             ISSUES_FOUND=$(echo "$FOUND_LINE" | grep -oE '[0-9]+' | head -1 || echo "0")
             ISSUES_FOUND="${ISSUES_FOUND:-0}"
         fi
@@ -144,8 +145,27 @@ If you find no issues, do NOT create a commit - just write the report with ISSUE
             ISSUES_FIXED=$(echo "$FIXED_LINE" | grep -oE '[0-9]+' | head -1 || echo "0")
             ISSUES_FIXED="${ISSUES_FIXED:-0}"
         fi
-    else
-        # No report file found in worktree or reports_dev/ - agent failed
+    fi
+
+    # If no report or report has no ISSUES_FOUND marker, the agent failed.
+    # Treat this as "unknown issues" - do NOT assume clean. Check if the
+    # reviewer at least made commits (it may have fixed things without
+    # writing a proper report).
+    if [ "$REPORT_HAS_MARKER" = "false" ]; then
+        cd "$WORKTREE_PATH" 2>/dev/null || cd "$PROJECT_DIR"
+        WORKTREE_COMMITS=$(git log "${CURRENT_BRANCH}..${BRANCH_NAME}" --oneline 2>/dev/null | wc -l | tr -d ' ')
+
+        if [ "$WORKTREE_COMMITS" -gt 0 ] 2>/dev/null; then
+            # Agent made fixes but didn't write a proper report - assume issues existed
+            ISSUES_FOUND=1
+            ISSUES_FIXED=1
+        else
+            # Agent failed entirely (no report, no commits) - cannot determine state.
+            # Write a failure report and let the loop continue to retry on next pass.
+            ISSUES_FOUND=1
+            ISSUES_FIXED=0
+        fi
+
         mkdir -p "$(dirname "$REPORT_FILE")"
         {
             echo "# Rechecker Review Report - Pass ${PASS_NUM}"
@@ -154,10 +174,11 @@ If you find no issues, do NOT create a commit - just write the report with ISSUE
             echo "**Commit**: ${COMMIT_SHA:0:8}"
             echo ""
             echo "## Summary"
-            echo "Review agent did not produce a report file. The agent may have encountered an error."
+            echo "Review agent did not produce a valid report (missing ISSUES_FOUND marker)."
+            echo "Agent commits in worktree: ${WORKTREE_COMMITS}"
             echo ""
-            echo "ISSUES_FOUND: 0"
-            echo "ISSUES_FIXED: 0"
+            echo "ISSUES_FOUND: ${ISSUES_FOUND}"
+            echo "ISSUES_FIXED: ${ISSUES_FIXED}"
         } > "$REPORT_FILE"
     fi
 
@@ -165,23 +186,28 @@ If you find no issues, do NOT create a commit - just write the report with ISSUE
     TOTAL_ISSUES_FIXED=$((TOTAL_ISSUES_FIXED + ISSUES_FIXED))
     PASS_SUMMARIES="${PASS_SUMMARIES}Pass ${PASS_NUM}: ${ISSUES_FOUND} issues found, ${ISSUES_FIXED} fixed. Report: $(basename "$REPORT_FILE"). "
 
-    # ── If 0 issues found, we are done ──────────────────────────
-    if [ "$ISSUES_FOUND" -eq 0 ] 2>/dev/null; then
+    # ── If 0 issues found (from a valid report), we are done ────
+    if [ "$ISSUES_FOUND" -eq 0 ] 2>/dev/null && [ "$REPORT_HAS_MARKER" = "true" ]; then
         FINAL_STATUS="clean"
         cleanup_worktree "$WORKTREE_PATH" "$BRANCH_NAME"
         break
     fi
 
-    # ── Issues found: check if reviewer committed fixes ─────────
-    cd "$WORKTREE_PATH"
+    # ── Check if reviewer committed fixes in the worktree ───────
+    cd "$WORKTREE_PATH" 2>/dev/null || cd "$PROJECT_DIR"
     WORKTREE_COMMITS=$(git log "${CURRENT_BRANCH}..${BRANCH_NAME}" --oneline 2>/dev/null | wc -l | tr -d ' ')
 
     if [ "$WORKTREE_COMMITS" -eq 0 ] 2>/dev/null; then
-        # Reviewer found issues but did not commit any fixes
-        FINAL_STATUS="issues_reported_not_fixed"
-        PASS_SUMMARIES="${PASS_SUMMARIES}(No fixes committed by reviewer.) "
+        # Reviewer found issues but did not commit fixes.
+        # Do NOT break - clean up this worktree and continue the loop.
+        # The next pass will re-review the same code and hopefully fix it.
+        PASS_SUMMARIES="${PASS_SUMMARIES}(No fixes committed by reviewer - will retry.) "
         cleanup_worktree "$WORKTREE_PATH" "$BRANCH_NAME"
-        break
+        # Skip the merge step and go to the next pass
+        if [ "$PASS_NUM" -eq "$MAX_PASSES" ]; then
+            FINAL_STATUS="max_passes_reached"
+        fi
+        continue
     fi
 
     # ── Merge fixes from worktree branch back into main ─────────
