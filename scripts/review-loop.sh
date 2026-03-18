@@ -38,7 +38,11 @@ cleanup_worktree() {
 for PASS_NUM in $(seq 1 $MAX_PASSES); do
     BRANCH_NAME="rechecker-pass-${PASS_NUM}-${TIMESTAMP}"
     WORKTREE_PATH="${WORKTREE_BASE}/pass-${PASS_NUM}"
-    REPORT_FILE="${REPORTS_DIR}/rechecker_${TIMESTAMP}_pass${PASS_NUM}.md"
+    REPORT_FILENAME="rechecker_${TIMESTAMP}_pass${PASS_NUM}.md"
+    REPORT_FILE="${REPORTS_DIR}/${REPORT_FILENAME}"
+    # The headless Claude runs sandboxed inside the worktree, so it must write
+    # the report there first. We copy it to reports_dev/ after it exits.
+    WT_REPORT_FILE="${WORKTREE_PATH}/${REPORT_FILENAME}"
 
     # ── Clean up any leftover worktree/branch at this path ──────
     if [ -d "$WORKTREE_PATH" ]; then
@@ -88,13 +92,15 @@ for PASS_NUM in $(seq 1 $MAX_PASSES); do
 
     # ── Build the prompt for headless Claude ────────────────────
     # Keep the prompt concise - the agent definition has the full instructions
-    REVIEW_PROMPT="Review the code changes in the diff file at: ${DIFF_FILE}
+    # Report path is INSIDE the worktree so the sandboxed Claude can write it
+    REVIEW_PROMPT="Review the code changes in the diff file at: .rechecker_diff.patch
 
 Commit message: ${COMMIT_MSG}
 Commit SHA: ${COMMIT_SHA}
 This is review pass ${PASS_NUM} of ${MAX_PASSES}.
 
-Save your review report to: ${REPORT_FILE}
+Save your review report to: ${REPORT_FILENAME}
+(Save it in the current working directory, which is: ${WORKTREE_PATH})
 
 After fixing all issues, commit your changes with:
 git add -A && git commit -m 'rechecker: pass ${PASS_NUM} fixes'
@@ -112,9 +118,17 @@ If you find no issues, do NOT create a commit - just write the report with ISSUE
         --no-session-persistence \
         2>/dev/null || true
 
-    # ── Parse the report ────────────────────────────────────────
+    # ── Copy report from worktree to reports_dev/ ─────────────────
+    # The headless Claude writes the report inside the worktree (sandbox).
+    # We copy it to the main project's reports_dev/ so it persists after
+    # the worktree is destroyed.
     ISSUES_FOUND=0
     ISSUES_FIXED=0
+
+    if [ -f "$WT_REPORT_FILE" ]; then
+        # Copy report from worktree to reports_dev/
+        cp "$WT_REPORT_FILE" "$REPORT_FILE"
+    fi
 
     if [ -f "$REPORT_FILE" ]; then
         # Extract ISSUES_FOUND: N from report
@@ -131,8 +145,7 @@ If you find no issues, do NOT create a commit - just write the report with ISSUE
             ISSUES_FIXED="${ISSUES_FIXED:-0}"
         fi
     else
-        # No report file created - the review agent may have failed
-        # Create a minimal report noting the failure
+        # No report file found in worktree or reports_dev/ - agent failed
         mkdir -p "$(dirname "$REPORT_FILE")"
         {
             echo "# Rechecker Review Report - Pass ${PASS_NUM}"
@@ -240,14 +253,19 @@ SUMMARY_FILE="${REPORTS_DIR}/rechecker_${TIMESTAMP}_summary.md"
 } > "$SUMMARY_FILE"
 
 # ── Output summary to stdout (captured by rechecker.sh) ────────
+# This text becomes the additionalContext that gets injected into the main
+# Claude session. It MUST instruct Claude to read the summary report so that
+# Claude actually sees the detailed findings.
+REPORT_INSTRUCTION="READ the summary report now: ${SUMMARY_FILE} -- then use the report content as your next commit message (amend the previous commit with: git commit --amend -m '<report content>')."
+
 if [ "$FINAL_STATUS" = "clean" ]; then
-    echo "Review completed (${FINAL_STATUS}). ${TOTAL_ISSUES_FOUND} total issues found across all passes, ${TOTAL_ISSUES_FIXED} fixed. All code changes verified clean. Reports: ${REPORTS_DIR}/rechecker_${TIMESTAMP}_*.md"
+    echo "Review completed (${FINAL_STATUS}). ${TOTAL_ISSUES_FOUND} total issues found across all passes, ${TOTAL_ISSUES_FIXED} fixed. All code changes verified clean. ${REPORT_INSTRUCTION}"
 elif [ "$FINAL_STATUS" = "issues_reported_not_fixed" ]; then
-    echo "Review completed (${FINAL_STATUS}). ${TOTAL_ISSUES_FOUND} issues found but reviewer did not commit fixes. Please review the reports manually. Reports: ${REPORTS_DIR}/rechecker_${TIMESTAMP}_*.md"
+    echo "Review completed (${FINAL_STATUS}). ${TOTAL_ISSUES_FOUND} issues found but reviewer did not commit fixes. READ the per-pass reports and fix the issues yourself: ${REPORTS_DIR}/rechecker_${TIMESTAMP}_pass*.md -- then ${REPORT_INSTRUCTION}"
 elif echo "$FINAL_STATUS" | grep -q "merge_conflict"; then
-    echo "Review completed with MERGE CONFLICT. ${TOTAL_ISSUES_FOUND} issues found, ${TOTAL_ISSUES_FIXED} fixed before conflict. Manual resolution needed. Reports: ${REPORTS_DIR}/rechecker_${TIMESTAMP}_*.md"
+    echo "Review completed with MERGE CONFLICT. ${TOTAL_ISSUES_FOUND} issues found, ${TOTAL_ISSUES_FIXED} fixed before conflict. Manual merge resolution needed. ${REPORT_INSTRUCTION}"
 elif [ "$FINAL_STATUS" = "max_passes_reached" ]; then
-    echo "Review completed (max ${MAX_PASSES} passes reached). ${TOTAL_ISSUES_FOUND} total issues found, ${TOTAL_ISSUES_FIXED} fixed. Some issues may remain. Reports: ${REPORTS_DIR}/rechecker_${TIMESTAMP}_*.md"
+    echo "Review completed (max ${MAX_PASSES} passes reached). ${TOTAL_ISSUES_FOUND} total issues found, ${TOTAL_ISSUES_FIXED} fixed. Some issues may remain. READ the per-pass reports for remaining issues: ${REPORTS_DIR}/rechecker_${TIMESTAMP}_pass*.md -- then ${REPORT_INSTRUCTION}"
 else
-    echo "Review completed (${FINAL_STATUS}). ${TOTAL_ISSUES_FOUND} issues found, ${TOTAL_ISSUES_FIXED} fixed. Reports: ${REPORTS_DIR}/rechecker_${TIMESTAMP}_*.md"
+    echo "Review completed (${FINAL_STATUS}). ${TOTAL_ISSUES_FOUND} issues found, ${TOTAL_ISSUES_FIXED} fixed. ${REPORT_INSTRUCTION}"
 fi
