@@ -22,6 +22,9 @@ TOTAL_ISSUES_FOUND=0
 TOTAL_ISSUES_FIXED=0
 PASS_SUMMARIES=""
 FINAL_STATUS="unknown"
+# Track consecutive no-fix passes to detect persistent agent failure
+CONSECUTIVE_NO_FIX=0
+MAX_CONSECUTIVE_NO_FIX=2
 # Track the HEAD before each pass so we know what diff to review next
 DIFF_BASE_SHA="${COMMIT_SHA}"
 
@@ -199,16 +202,27 @@ If you find no issues, do NOT create a commit - just write the report with ISSUE
 
     if [ "$WORKTREE_COMMITS" -eq 0 ] 2>/dev/null; then
         # Reviewer found issues but did not commit fixes.
-        # Do NOT break - clean up this worktree and continue the loop.
-        # The next pass will re-review the same code and hopefully fix it.
-        PASS_SUMMARIES="${PASS_SUMMARIES}(No fixes committed by reviewer - will retry.) "
+        CONSECUTIVE_NO_FIX=$((CONSECUTIVE_NO_FIX + 1))
         cleanup_worktree "$WORKTREE_PATH" "$BRANCH_NAME"
-        # Skip the merge step and go to the next pass
+
+        if [ "$CONSECUTIVE_NO_FIX" -ge "$MAX_CONSECUTIVE_NO_FIX" ]; then
+            # Two consecutive passes where the reviewer found issues but
+            # failed to commit fixes. This is a persistent agent failure.
+            FINAL_STATUS="agent_bug: reviewer found issues but failed to commit fixes ${CONSECUTIVE_NO_FIX} times in a row"
+            PASS_SUMMARIES="${PASS_SUMMARIES}(No fixes committed - ${CONSECUTIVE_NO_FIX} consecutive failures, giving up.) "
+            break
+        fi
+
+        # First failure: retry on the next pass with a fresh worktree
+        PASS_SUMMARIES="${PASS_SUMMARIES}(No fixes committed by reviewer - retrying once more.) "
         if [ "$PASS_NUM" -eq "$MAX_PASSES" ]; then
             FINAL_STATUS="max_passes_reached"
         fi
         continue
     fi
+
+    # Reviewer committed fixes successfully - reset the no-fix counter
+    CONSECUTIVE_NO_FIX=0
 
     # ── Merge fixes from worktree branch back into main ─────────
     cd "$PROJECT_DIR"
