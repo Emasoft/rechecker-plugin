@@ -15,8 +15,8 @@ on:
       - 'scripts/**'
 
 env:
-  MARKETPLACE_OWNER: ''
-  MARKETPLACE_REPO: 'my-plugins-marketplace'
+  MARKETPLACE_OWNER: 'Emasoft'
+  MARKETPLACE_REPO: 'emasoft-plugins'
 
 jobs:
   notify:
