@@ -1,7 +1,7 @@
 ---
 name: code-reviewer
 description: Automated code reviewer that analyzes git diffs, finds bugs and issues, fixes them, and generates reports
-model: sonnet
+model: opus[1m]
 allowedTools:
   - Read
   - Edit

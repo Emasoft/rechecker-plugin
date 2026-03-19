@@ -178,7 +178,7 @@ The plugin works out of the box with no configuration. Key defaults:
 | Hook timeout | 24 hours | `hooks/hooks.json` |
 | Retry count | 3 | `review-loop.sh` (`MAX_RETRIES`) |
 | Retry delay | 30s base | `review-loop.sh` (`RETRY_DELAY`) |
-| Agent model | sonnet | `agents/code-reviewer.md` frontmatter |
+| Agent model | opus[1m] | `agents/code-reviewer.md` frontmatter |
 | Permission mode | bypass all | `review-loop.sh` (`--dangerously-skip-permissions`) |
 
 ### Gitignore
