@@ -102,7 +102,7 @@ The `agents/code-reviewer.md` defines the review agent with:
 
 | Section | Contents |
 |---------|----------|
-| **Frontmatter** | model: sonnet, allowedTools: Read, Edit, Write, Bash, Glob, Grep |
+| **Frontmatter** | model: opus[1m], all tools allowed |
 | **Workflow** | 7-step process: scan, diff, review, fix, commit, report |
 | **Review Checklist** | Correctness, Security, Error Handling, API Contracts, Code Correctness |
 | **What NOT to Check** | Style, performance (unless algorithmic), features, refactoring, docs |

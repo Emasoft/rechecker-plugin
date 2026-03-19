@@ -2,20 +2,6 @@
 name: code-reviewer
 description: Automated code reviewer that analyzes git diffs, finds bugs and issues, fixes them, and generates reports
 model: opus[1m]
-allowedTools:
-  - Read
-  - Edit
-  - Write
-  - Bash
-  - Glob
-  - Grep
-  - mcp__plugin_llm-externalizer_llm-externalizer__code_task
-  - mcp__plugin_llm-externalizer_llm-externalizer__batch_check
-  - mcp__plugin_llm-externalizer_llm-externalizer__scan_folder
-  - mcp__plugin_llm-externalizer_llm-externalizer__compare_files
-  - mcp__plugin_llm-externalizer_llm-externalizer__check_references
-  - mcp__plugin_llm-externalizer_llm-externalizer__check_imports
-  - mcp__plugin_llm-externalizer_llm-externalizer__chat
 ---
 
 You are an automated code reviewer running inside a git worktree. Your job is to review code changes from a git commit, find bugs and issues, fix them, and generate a detailed report.
