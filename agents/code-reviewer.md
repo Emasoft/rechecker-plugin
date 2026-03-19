@@ -154,3 +154,78 @@ ISSUES_FIXED: 0
 5. **If unsure** whether something is a bug, report it in the report but do NOT fix it
 6. **Stage and commit ALL fixes** in a single commit after you are done fixing everything
 7. **Do not modify test files** unless the test itself has a bug (not just a test that fails because of your fix)
+
+---
+
+## Execution Checklist (MANDATORY)
+
+**IMPORTANT**: Copy this checklist into your working context at the start. Update each item as you complete it. You may ONLY exit when ALL items are marked DONE. If any item fails, retry it before moving on.
+
+```
+[ ] 1. WORKTREE RESET
+      - Ran the git reset command from the prompt
+      - Verified files match the target commit (check with: git log --oneline -1)
+
+[ ] 2. CHANGED FILES LIST GENERATED
+      - Ran changed-files.sh with the commit SHA
+      - Output file .rechecker_changed_files.txt exists
+      - File is not empty (has at least 1 line)
+      - If empty: no files to review, write report with ISSUES_FOUND: 0 and exit
+
+[ ] 3. SCAN EXECUTED
+      - Ran scan.sh with --autofix --target-list .rechecker_changed_files.txt -o . .
+      - Captured the report file path from stdout
+      - Read the scan report JSON
+      - Noted how many issues each tool found (Super-Linter, Semgrep, TruffleHog)
+      - Noted how many issues were auto-fixed
+      - Noted any remaining unfixed findings
+      - OR: scan failed/unavailable, noted reason, continuing without scan results
+
+[ ] 4. DIFF REVIEWED
+      - Ran the git diff command from the prompt
+      - Read the full diff output
+      - Identified all changed files from the diff
+
+[ ] 5. EACH CHANGED FILE READ IN FULL
+      - For every file in the diff, read the FULL file (not just the changed lines)
+      - Understood the context around each change
+      - No files were skipped
+
+[ ] 6. ISSUES IDENTIFIED
+      - Checked every item in the Review Checklist (Correctness, Security, Error Handling,
+        API Contracts, Code Correctness)
+      - Cross-referenced with unfixed scan findings
+      - Each issue has: file path, line number, severity, description
+      - Counted total issues found
+
+[ ] 7. ISSUES FIXED
+      - Every identified issue that is a clear bug has been fixed via Edit tool
+      - Fixes are minimal and preserve original intent
+      - Did NOT re-fix things the scan already auto-fixed
+      - Did NOT change code style or formatting
+      - Did NOT add new features
+      - Uncertain issues are reported but NOT fixed
+
+[ ] 8. CHANGES COMMITTED (skip if no issues found and scan made no fixes)
+      - Ran: git add -A && git commit -m "rechecker: pass N fixes"
+      - Commit succeeded (no errors)
+      - Commit includes both scan autofix changes and manual fixes
+
+[ ] 9. REPORT WRITTEN
+      - Report saved to the filename specified in the prompt
+      - Report saved in the current working directory (relative path)
+      - Report follows the exact format from the Report Format section
+      - Report includes the Scan Results section
+      - Report lists ALL files reviewed
+      - Report ends with ISSUES_FOUND: N and ISSUES_FIXED: N lines
+      - ISSUES_FOUND count matches actual count of issues identified
+      - ISSUES_FIXED count matches actual count of issues fixed
+
+[ ] 10. FINAL VERIFICATION
+      - If ISSUES_FOUND > 0: verified commit exists (git log --oneline -1)
+      - If ISSUES_FOUND = 0: verified NO commit was created for this pass
+      - Report file exists on disk (verified with ls or Glob)
+      - All checklist items above are DONE
+```
+
+**EXIT RULE**: Do NOT exit or stop until every checklist item is marked DONE. If an item fails (e.g., scan fails, commit fails, file not found), either retry it or explicitly note the failure reason and mark it as DONE with the failure noted. The checklist is your contract - incomplete execution is not acceptable.
