@@ -82,6 +82,7 @@ rechecker-plugin/
 |       +-- SKILL.md             # /recheck slash command: on-demand review trigger
 +-- scripts/
 |   +-- rechecker.sh             # Entry point: commit detection, locking, JSON I/O
+|   +-- recheck.sh               # On-demand entry point for /recheck skill
 |   +-- review-loop.sh           # Core loop: worktree, scan, review, merge, retry
 |   +-- changed-files.sh         # Generates list of changed files from git commit
 |   +-- scan.sh                  # Runs Super-Linter + Semgrep + TruffleHog via Docker
