@@ -90,9 +90,6 @@ for PASS_NUM in $(seq 1 "$MAX_PASSES"); do
     fi
 
     # ── Build the prompt ────────────────────────────────────────
-    # The agent runs git commands itself to view the diff (no diff file needed).
-    # It also resets the worktree to match the commit state so it can edit
-    # the actual source files.
     if [ "$PASS_NUM" -eq 1 ]; then
         DIFF_COMMAND="git diff ${COMMIT_SHA}~1..${COMMIT_SHA}"
         RESET_COMMAND="git reset --hard ${COMMIT_SHA}"
@@ -101,37 +98,35 @@ for PASS_NUM in $(seq 1 "$MAX_PASSES"); do
         RESET_COMMAND="git reset --hard ${REVIEW_TARGET_SHA}"
     fi
 
-    # Build the scan report filename for this pass
     SCAN_REPORT_FILENAME="rechecker_${TIMESTAMP}_pass${PASS_NUM}_scan.json"
 
     REVIEW_PROMPT="You are reviewing code in a git worktree. Follow these steps EXACTLY:
 
-STEP 1: Reset the worktree to match the commit being reviewed:
-  ${RESET_COMMAND}
-
-STEP 2: Run the automated linter and security scan with autofix.
-  This runs Super-Linter (40+ language linters), Semgrep (security), and TruffleHog (secrets).
-  It auto-fixes style and security issues where supported.
-  Run this command:
+STEP 1: Run the automated linter and security scan with autofix.
+  This is the FIRST thing you must do. It runs Super-Linter (40+ language linters),
+  Semgrep (OWASP security rules with autofix), and TruffleHog (secret detection) via Docker.
+  But first, the worktree may not have the right files checked out. Run this to fix that:
+    ${RESET_COMMAND}
+  Then immediately run the scan:
     bash ${SCAN_SCRIPT} --autofix -o . .
-  The script prints the report file path to stdout. Read that report file.
-  IMPORTANT: If the scan fails (e.g. Docker not available), just continue to STEP 3.
+  The script prints the scan report file path to stdout. Read that report file.
+  IMPORTANT: If the scan fails (e.g. Docker not available), just continue to STEP 2.
   The scan is a best-effort enhancement, not a hard requirement.
-  If the scan auto-fixed files, note what was fixed. Those fixes are already applied.
+  If the scan auto-fixed files, note what was fixed. Those fixes are already applied in place.
 
-STEP 3: View the code changes to review (the original commit diff):
+STEP 2: View the code changes to review (the original commit diff):
   ${DIFF_COMMAND}
 
-STEP 4: Review every changed file thoroughly using the checklist in your agent instructions.
-  Also review any remaining (unfixed) findings from the scan report in STEP 2.
+STEP 3: Review every changed file thoroughly using the checklist in your agent instructions.
+  Also review any remaining (unfixed) findings from the scan report in STEP 1.
 
-STEP 5: Fix any issues you find by editing the source files.
-  Do NOT re-fix things the scan already auto-fixed in STEP 2.
+STEP 4: Fix any issues you find by editing the source files.
+  Do NOT re-fix things the scan already auto-fixed in STEP 1.
 
-STEP 6: If you made fixes (in STEP 5) OR if the scan made fixes (in STEP 2), commit everything:
+STEP 5: If you made fixes (in STEP 4) OR if the scan made fixes (in STEP 1), commit everything:
   git add -A && git commit -m 'rechecker: pass ${PASS_NUM} fixes'
 
-STEP 7: Write your review report to: ${REPORT_FILENAME}
+STEP 6: Write your review report to: ${REPORT_FILENAME}
   (Use the Write tool to save it in the current working directory.)
   Include a section for scan results (what the scan found, what it auto-fixed, what remains).
 
