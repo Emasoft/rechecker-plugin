@@ -44,6 +44,10 @@ node_modules/
 # Dev folders wildcard
 *_dev/
 
+# Mega-Linter
+megalinter-reports/
+mega-linter.log
+
 # Claude Code local config
 .claude/
 .tldr/
