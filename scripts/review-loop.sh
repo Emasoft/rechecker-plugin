@@ -93,24 +93,44 @@ for PASS_NUM in $(seq 1 "$MAX_PASSES"); do
     if [ "$PASS_NUM" -eq 1 ]; then
         DIFF_COMMAND="git diff ${COMMIT_SHA}~1..${COMMIT_SHA}"
         RESET_COMMAND="git reset --hard ${COMMIT_SHA}"
+        CHANGED_FILES_COMMAND="git diff --name-only ${COMMIT_SHA}~1..${COMMIT_SHA}"
     else
         DIFF_COMMAND="git diff ${REVIEW_TARGET_SHA}~1..${REVIEW_TARGET_SHA}"
         RESET_COMMAND="git reset --hard ${REVIEW_TARGET_SHA}"
+        CHANGED_FILES_COMMAND="git diff --name-only ${REVIEW_TARGET_SHA}~1..${REVIEW_TARGET_SHA}"
     fi
 
     SCAN_REPORT_FILENAME="rechecker_${TIMESTAMP}_pass${PASS_NUM}_scan.json"
+
+    # Build the scan command with --target flags for each changed file.
+    # scan.sh defaults to scanning ALL files, which is wrong for our pipeline
+    # (would lint unrelated code and autofix things not in the commit).
+    # Using --target restricts the scan to only the changed files.
+    SCAN_COMMAND="bash ${SCAN_SCRIPT} --autofix -o . "
 
     REVIEW_PROMPT="You are reviewing code in a git worktree. Follow these steps EXACTLY:
 
 STEP 1: Run the automated linter and security scan with autofix.
   This is the FIRST thing you must do. It runs Super-Linter (40+ language linters),
   Semgrep (OWASP security rules with autofix), and TruffleHog (secret detection) via Docker.
-  But first, the worktree may not have the right files checked out. Run this to fix that:
+
+  First, ensure the worktree has the right files checked out:
     ${RESET_COMMAND}
-  Then immediately run the scan:
-    bash ${SCAN_SCRIPT} --autofix -o . .
+
+  Then get the list of changed files and run the scan ONLY on those files:
+    CHANGED_FILES=\$(${CHANGED_FILES_COMMAND})
+    TARGET_ARGS=\"\"
+    for f in \$CHANGED_FILES; do
+      TARGET_ARGS=\"\$TARGET_ARGS --target \$f\"
+    done
+    ${SCAN_COMMAND}\$TARGET_ARGS .
+
+  IMPORTANT: The scan MUST target only the changed files (via --target flags).
+  Do NOT run scan.sh without --target, as that would scan the entire codebase
+  and autofix unrelated files.
+
   The script prints the scan report file path to stdout. Read that report file.
-  IMPORTANT: If the scan fails (e.g. Docker not available), just continue to STEP 2.
+  If the scan fails (e.g. Docker not available, no changed files), just continue to STEP 2.
   The scan is a best-effort enhancement, not a hard requirement.
   If the scan auto-fixed files, note what was fixed. Those fixes are already applied in place.
 
