@@ -102,12 +102,6 @@ for PASS_NUM in $(seq 1 "$MAX_PASSES"); do
 
     SCAN_REPORT_FILENAME="rechecker_${TIMESTAMP}_pass${PASS_NUM}_scan.json"
 
-    # Build the scan command with --target flags for each changed file.
-    # scan.sh defaults to scanning ALL files, which is wrong for our pipeline
-    # (would lint unrelated code and autofix things not in the commit).
-    # Using --target restricts the scan to only the changed files.
-    SCAN_COMMAND="bash ${SCAN_SCRIPT} --autofix -o . "
-
     REVIEW_PROMPT="You are reviewing code in a git worktree. Follow these steps EXACTLY:
 
 STEP 1: Run the automated linter and security scan with autofix.
@@ -117,16 +111,12 @@ STEP 1: Run the automated linter and security scan with autofix.
   First, ensure the worktree has the right files checked out:
     ${RESET_COMMAND}
 
-  Then get the list of changed files and run the scan ONLY on those files:
-    CHANGED_FILES=\$(${CHANGED_FILES_COMMAND})
-    TARGET_ARGS=\"\"
-    for f in \$CHANGED_FILES; do
-      TARGET_ARGS=\"\$TARGET_ARGS --target \$f\"
-    done
-    ${SCAN_COMMAND}\$TARGET_ARGS .
+  Then save the list of changed files and run the scan ONLY on those files:
+    ${CHANGED_FILES_COMMAND} > .rechecker_changed_files.txt
+    bash ${SCAN_SCRIPT} --autofix --target-list .rechecker_changed_files.txt -o . .
 
-  IMPORTANT: The scan MUST target only the changed files (via --target flags).
-  Do NOT run scan.sh without --target, as that would scan the entire codebase
+  IMPORTANT: The scan MUST use --target-list to scan only the changed files.
+  Do NOT run scan.sh without --target-list, as that would scan the entire codebase
   and autofix unrelated files.
 
   The script prints the scan report file path to stdout. Read that report file.
