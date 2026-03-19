@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # review-loop.sh - Core review loop
 # Uses 'claude --worktree' for automatic worktree lifecycle management.
-# Claude Code creates worktrees at <project>/.claude/worktrees/<name>,
-# auto-cleans if no changes, keeps if changes were committed.
+# Claude Code creates worktrees at <project>/.claude/worktrees/<name>.
+# Auto-cleans if no changes, keeps if changes were committed.
+#
+# KEY DESIGN: We do NOT pass a diff file to the worktree because untracked
+# files in the main working directory are NOT visible in worktrees. Instead,
+# the agent runs 'git diff' itself using the commit SHA (all git objects are
+# shared across worktrees). The agent also resets its worktree to match the
+# commit state with 'git reset --hard <SHA>' before reviewing.
 set -euo pipefail
 
 # ── Parameters ──────────────────────────────────────────────────
@@ -19,13 +25,23 @@ AGENT_FILE="${PLUGIN_ROOT}/agents/code-reviewer.md"
 # ── State tracking ──────────────────────────────────────────────
 TOTAL_ISSUES_FOUND=0
 TOTAL_ISSUES_FIXED=0
+# Use newline as delimiter for pass summaries to avoid corrupting
+# sentences that contain dots (filenames like auth.py, etc.)
 PASS_SUMMARIES=""
+add_summary() {
+    if [ -n "$PASS_SUMMARIES" ]; then
+        PASS_SUMMARIES="${PASS_SUMMARIES}
+${1}"
+    else
+        PASS_SUMMARIES="$1"
+    fi
+}
 FINAL_STATUS="unknown"
 # Track consecutive no-fix passes to detect persistent agent failure
 CONSECUTIVE_NO_FIX=0
 MAX_CONSECUTIVE_NO_FIX=2
 # Track the HEAD before each pass so we know what diff to review next
-DIFF_BASE_SHA="${COMMIT_SHA}"
+REVIEW_TARGET_SHA="${COMMIT_SHA}"
 
 # ── Helper: clean up a Claude-managed worktree and its branch ───
 cleanup_worktree() {
@@ -33,14 +49,12 @@ cleanup_worktree() {
     local wt_path="${PROJECT_DIR}/.claude/worktrees/${wt_name}"
     local branch_name="worktree-${wt_name}"
     cd "$PROJECT_DIR"
-    # Claude Code creates worktrees at .claude/worktrees/<name>
-    # with branch name worktree-<name>
     git worktree remove --force "$wt_path" 2>/dev/null || rm -rf "$wt_path" 2>/dev/null || true
     git branch -D "$branch_name" 2>/dev/null || true
 }
 
 # ── Main loop ───────────────────────────────────────────────────
-for PASS_NUM in $(seq 1 $MAX_PASSES); do
+for PASS_NUM in $(seq 1 "$MAX_PASSES"); do
     WT_NAME="rechecker-${TIMESTAMP}-pass${PASS_NUM}"
     WORKTREE_PATH="${PROJECT_DIR}/.claude/worktrees/${WT_NAME}"
     WT_BRANCH="worktree-${WT_NAME}"
@@ -50,85 +64,91 @@ for PASS_NUM in $(seq 1 $MAX_PASSES); do
     # ── Clean up any leftover worktree from a previous failed run ─
     cleanup_worktree "$WT_NAME"
 
-    # ── Generate the diff to review ─────────────────────────────
+    # ── Check if there are changes to review ────────────────────
     cd "$PROJECT_DIR"
-    DIFF_CONTENT=""
     COMMIT_MSG=""
 
     if [ "$PASS_NUM" -eq 1 ]; then
-        # First pass: diff of the triggering commit
-        # Handle first commit in repo (no parent)
-        DIFF_CONTENT=$(git diff "${COMMIT_SHA}~1..${COMMIT_SHA}" 2>/dev/null || \
-                       git show "${COMMIT_SHA}" --format="" 2>/dev/null || \
-                       echo "ERROR: Unable to generate diff for commit ${COMMIT_SHA}")
+        # First pass: review the triggering commit
         COMMIT_MSG=$(git log -1 --format="%s" "${COMMIT_SHA}" 2>/dev/null || echo "Unknown")
+        # Verify the commit has actual changes (not empty)
+        DIFF_STAT=$(git diff --stat "${COMMIT_SHA}~1..${COMMIT_SHA}" 2>/dev/null || \
+                    git show --stat "${COMMIT_SHA}" --format="" 2>/dev/null || echo "")
     else
-        # Subsequent passes: diff of what the previous merge introduced
-        DIFF_CONTENT=$(git diff "${DIFF_BASE_SHA}..HEAD" 2>/dev/null || \
-                       echo "ERROR: Unable to generate diff between ${DIFF_BASE_SHA} and HEAD")
+        # Subsequent passes: review what the previous merge introduced
         COMMIT_MSG="Rechecker pass $((PASS_NUM - 1)) fixes"
+        DIFF_STAT=$(git diff --stat "${REVIEW_TARGET_SHA}..HEAD" 2>/dev/null || echo "")
+        # Update the target SHA for git diff commands used by the agent
+        REVIEW_TARGET_SHA=$(git rev-parse HEAD 2>/dev/null || echo "$COMMIT_SHA")
     fi
 
-    # Skip if diff is empty (no actual code changes)
-    if [ -z "$DIFF_CONTENT" ] || [ "$DIFF_CONTENT" = "" ]; then
+    if [ -z "$DIFF_STAT" ]; then
         FINAL_STATUS="clean"
-        PASS_SUMMARIES="${PASS_SUMMARIES}Pass ${PASS_NUM}: No changes to review. "
+        add_summary "Pass ${PASS_NUM}: No changes to review"
         break
     fi
 
-    # Save diff to a temp file in the project for the review agent to read.
-    # Claude --worktree copies the repo state, so files in the project root
-    # will be available in the worktree.
-    DIFF_FILE="${PROJECT_DIR}/.rechecker_diff_pass${PASS_NUM}.patch"
-    echo "$DIFF_CONTENT" > "$DIFF_FILE"
+    # ── Build the prompt ────────────────────────────────────────
+    # The agent runs git commands itself to view the diff (no diff file needed).
+    # It also resets the worktree to match the commit state so it can edit
+    # the actual source files.
+    if [ "$PASS_NUM" -eq 1 ]; then
+        DIFF_COMMAND="git diff ${COMMIT_SHA}~1..${COMMIT_SHA}"
+        RESET_COMMAND="git reset --hard ${COMMIT_SHA}"
+    else
+        DIFF_COMMAND="git diff ${REVIEW_TARGET_SHA}~1..${REVIEW_TARGET_SHA}"
+        RESET_COMMAND="git reset --hard ${REVIEW_TARGET_SHA}"
+    fi
 
-    # ── Build the prompt for headless Claude ────────────────────
-    REVIEW_PROMPT="Review the code changes in the diff file at: .rechecker_diff_pass${PASS_NUM}.patch
+    REVIEW_PROMPT="You are reviewing code in a git worktree. Follow these steps EXACTLY:
 
-Commit message: ${COMMIT_MSG}
-Commit SHA: ${COMMIT_SHA}
-This is review pass ${PASS_NUM} of ${MAX_PASSES}.
+STEP 1: Reset the worktree to match the commit being reviewed:
+  ${RESET_COMMAND}
 
-Save your review report to: ${REPORT_FILENAME}
-(Save it in the current working directory.)
+STEP 2: View the code changes to review:
+  ${DIFF_COMMAND}
 
-After fixing all issues, commit your changes with:
-git add -A && git commit -m 'rechecker: pass ${PASS_NUM} fixes'
+STEP 3: Review every changed file thoroughly using the checklist in your agent instructions.
 
-If you find no issues, do NOT create a commit - just write the report with ISSUES_FOUND: 0"
+STEP 4: Fix any issues you find by editing the source files.
+
+STEP 5: If you made fixes, commit them:
+  git add -A && git commit -m 'rechecker: pass ${PASS_NUM} fixes'
+
+STEP 6: Write your review report to: ${REPORT_FILENAME}
+  (Use the Write tool to save it in the current working directory.)
+
+Context:
+- Commit message: ${COMMIT_MSG}
+- Commit SHA: ${COMMIT_SHA}
+- Review pass: ${PASS_NUM} of ${MAX_PASSES}
+
+If you find NO issues, do NOT create a commit. Just write the report with ISSUES_FOUND: 0"
 
     # ── Run headless Claude in a managed worktree ────────────────
-    # claude --worktree <name> creates a worktree at .claude/worktrees/<name>
-    # with branch worktree-<name>, branched from the default remote branch.
-    # If no changes are made, the worktree is auto-cleaned on exit.
-    # If changes exist, the worktree and branch are preserved for us to merge.
-    #
     # Retry logic for transient API errors (rate limits, server overload).
     cd "$PROJECT_DIR"
     MAX_RETRIES=3
     RETRY_DELAY=30
     CLAUDE_EXIT_CODE=0
 
-    for RETRY in $(seq 0 $MAX_RETRIES); do
+    for RETRY in $(seq 0 "$MAX_RETRIES"); do
         if [ "$RETRY" -gt 0 ]; then
             WAIT_TIME=$((RETRY_DELAY * RETRY))
-            PASS_SUMMARIES="${PASS_SUMMARIES}(API error on pass ${PASS_NUM}, retry ${RETRY}/${MAX_RETRIES} after ${WAIT_TIME}s.) "
+            add_summary "Pass ${PASS_NUM}: API error, retry ${RETRY}/${MAX_RETRIES} after ${WAIT_TIME}s"
             sleep "$WAIT_TIME"
-            # Clean up worktree from failed attempt before retrying
             cleanup_worktree "$WT_NAME"
             cd "$PROJECT_DIR"
         fi
 
-        CLAUDE_STDERR_FILE="${PROJECT_DIR}/.rechecker_stderr_pass${PASS_NUM}.log"
+        CLAUDE_STDERR_FILE="${PROJECT_DIR}/.rechecker_stderr.log"
         claude --worktree "$WT_NAME" \
             --agent "$AGENT_FILE" \
             -p "$REVIEW_PROMPT" \
             --permission-mode acceptEdits \
-            --no-session-persistence \
             2>"$CLAUDE_STDERR_FILE"
         CLAUDE_EXIT_CODE=$?
 
-        # Exit code 0 = success
         if [ "$CLAUDE_EXIT_CODE" -eq 0 ]; then
             break
         fi
@@ -141,22 +161,19 @@ If you find no issues, do NOT create a commit - just write the report with ISSUE
         fi
 
         if [ "$IS_TRANSIENT" = "false" ]; then
-            PASS_SUMMARIES="${PASS_SUMMARIES}(API error on pass ${PASS_NUM}: non-transient, skipping retries.) "
+            add_summary "Pass ${PASS_NUM}: API error (non-transient), skipping retries"
             break
         fi
 
         if [ "$RETRY" -eq "$MAX_RETRIES" ]; then
-            PASS_SUMMARIES="${PASS_SUMMARIES}(API error on pass ${PASS_NUM}: max retries exhausted.) "
+            add_summary "Pass ${PASS_NUM}: API error, max retries exhausted"
         fi
     done
 
-    # Clean up the temp diff file
-    rm -f "$DIFF_FILE" 2>/dev/null || true
+    # Clean up stderr log
     rm -f "$CLAUDE_STDERR_FILE" 2>/dev/null || true
 
     # ── Retrieve report from worktree ───────────────────────────
-    # The headless Claude writes the report inside the worktree.
-    # Copy it to reports_dev/ before the worktree is cleaned up.
     ISSUES_FOUND=-1
     ISSUES_FIXED=0
     REPORT_HAS_MARKER=false
@@ -167,7 +184,6 @@ If you find no issues, do NOT create a commit - just write the report with ISSUE
     fi
 
     if [ -f "$REPORT_FILE" ]; then
-        # Extract ISSUES_FOUND: N from report
         FOUND_LINE=$(grep -i "^ISSUES_FOUND:" "$REPORT_FILE" 2>/dev/null | tail -1 || echo "")
         if [ -n "$FOUND_LINE" ]; then
             REPORT_HAS_MARKER=true
@@ -182,10 +198,8 @@ If you find no issues, do NOT create a commit - just write the report with ISSUE
         fi
     fi
 
-    # If no report or missing ISSUES_FOUND marker, the agent failed.
-    # Do NOT assume clean - treat as unknown issues.
+    # If no valid report, treat as unknown issues (never assume clean).
     if [ "$REPORT_HAS_MARKER" = "false" ]; then
-        # Check if the worktree exists (= agent made changes) or was auto-cleaned (= no changes)
         if [ -d "$WORKTREE_PATH" ]; then
             cd "$WORKTREE_PATH" 2>/dev/null || cd "$PROJECT_DIR"
             WORKTREE_COMMITS=$(git log "${CURRENT_BRANCH}..${WT_BRANCH}" --oneline 2>/dev/null | wc -l | tr -d ' ')
@@ -197,7 +211,6 @@ If you find no issues, do NOT create a commit - just write the report with ISSUE
                 ISSUES_FIXED=0
             fi
         else
-            # Worktree was auto-cleaned = no changes were made
             ISSUES_FOUND=1
             ISSUES_FIXED=0
         fi
@@ -219,28 +232,26 @@ If you find no issues, do NOT create a commit - just write the report with ISSUE
 
     TOTAL_ISSUES_FOUND=$((TOTAL_ISSUES_FOUND + ISSUES_FOUND))
     TOTAL_ISSUES_FIXED=$((TOTAL_ISSUES_FIXED + ISSUES_FIXED))
-    PASS_SUMMARIES="${PASS_SUMMARIES}Pass ${PASS_NUM}: ${ISSUES_FOUND} issues found, ${ISSUES_FIXED} fixed. Report: $(basename "$REPORT_FILE"). "
+    add_summary "Pass ${PASS_NUM}: ${ISSUES_FOUND} issues found, ${ISSUES_FIXED} fixed. Report: $(basename "$REPORT_FILE")"
 
     # ── If 0 issues found (from a valid report), we are done ────
     if [ "$ISSUES_FOUND" -eq 0 ] 2>/dev/null && [ "$REPORT_HAS_MARKER" = "true" ]; then
         FINAL_STATUS="clean"
-        # Worktree auto-cleaned by Claude Code since no changes were committed
         cleanup_worktree "$WT_NAME"
         break
     fi
 
     # ── Check if worktree still exists (= reviewer made changes) ─
     if [ ! -d "$WORKTREE_PATH" ]; then
-        # Worktree was auto-cleaned by Claude Code = no changes committed
         CONSECUTIVE_NO_FIX=$((CONSECUTIVE_NO_FIX + 1))
 
         if [ "$CONSECUTIVE_NO_FIX" -ge "$MAX_CONSECUTIVE_NO_FIX" ]; then
             FINAL_STATUS="agent_bug: reviewer found issues but failed to commit fixes ${CONSECUTIVE_NO_FIX} times in a row"
-            PASS_SUMMARIES="${PASS_SUMMARIES}(No fixes committed - ${CONSECUTIVE_NO_FIX} consecutive failures, giving up.) "
+            add_summary "Pass ${PASS_NUM}: No fixes committed - ${CONSECUTIVE_NO_FIX} consecutive failures, giving up"
             break
         fi
 
-        PASS_SUMMARIES="${PASS_SUMMARIES}(No fixes committed by reviewer - retrying once more.) "
+        add_summary "Pass ${PASS_NUM}: No fixes committed by reviewer - retrying once more"
         if [ "$PASS_NUM" -eq "$MAX_PASSES" ]; then
             FINAL_STATUS="max_passes_reached"
         fi
@@ -252,48 +263,44 @@ If you find no issues, do NOT create a commit - just write the report with ISSUE
     WORKTREE_COMMITS=$(git log "${CURRENT_BRANCH}..${WT_BRANCH}" --oneline 2>/dev/null | wc -l | tr -d ' ')
 
     if [ "$WORKTREE_COMMITS" -eq 0 ] 2>/dev/null; then
-        # Worktree exists but no commits (just untracked files or staged changes)
         CONSECUTIVE_NO_FIX=$((CONSECUTIVE_NO_FIX + 1))
         cleanup_worktree "$WT_NAME"
 
         if [ "$CONSECUTIVE_NO_FIX" -ge "$MAX_CONSECUTIVE_NO_FIX" ]; then
             FINAL_STATUS="agent_bug: reviewer found issues but failed to commit fixes ${CONSECUTIVE_NO_FIX} times in a row"
-            PASS_SUMMARIES="${PASS_SUMMARIES}(No fixes committed - ${CONSECUTIVE_NO_FIX} consecutive failures, giving up.) "
+            add_summary "Pass ${PASS_NUM}: No fixes committed - ${CONSECUTIVE_NO_FIX} consecutive failures, giving up"
             break
         fi
 
-        PASS_SUMMARIES="${PASS_SUMMARIES}(No fixes committed by reviewer - retrying once more.) "
+        add_summary "Pass ${PASS_NUM}: No fixes committed by reviewer - retrying once more"
         if [ "$PASS_NUM" -eq "$MAX_PASSES" ]; then
             FINAL_STATUS="max_passes_reached"
         fi
         continue
     fi
 
-    # Reviewer committed fixes successfully - reset the no-fix counter
+    # Reviewer committed fixes - reset the no-fix counter
     CONSECUTIVE_NO_FIX=0
 
     # ── Merge fixes from worktree branch back into main ─────────
     cd "$PROJECT_DIR"
 
-    # Verify working directory is clean before merging
     if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
         FINAL_STATUS="error: working directory not clean before merge at pass ${PASS_NUM}"
-        PASS_SUMMARIES="${PASS_SUMMARIES}(Merge skipped: dirty working directory.) "
+        add_summary "Pass ${PASS_NUM}: Merge skipped - dirty working directory"
         cleanup_worktree "$WT_NAME"
         break
     fi
 
-    # Record HEAD before merge so we can diff against it in the next pass
-    DIFF_BASE_SHA=$(git rev-parse HEAD)
+    # Record HEAD before merge for diffing in the next pass
+    REVIEW_TARGET_SHA=$(git rev-parse HEAD)
 
-    # Attempt the merge
     if git merge --no-edit "$WT_BRANCH" 2>/dev/null; then
-        PASS_SUMMARIES="${PASS_SUMMARIES}Fixes merged successfully. "
+        add_summary "Pass ${PASS_NUM}: Fixes merged successfully"
     else
-        # Merge conflict - abort and report
         git merge --abort 2>/dev/null || true
         FINAL_STATUS="merge_conflict at pass ${PASS_NUM}"
-        PASS_SUMMARIES="${PASS_SUMMARIES}MERGE CONFLICT - manual resolution needed. "
+        add_summary "Pass ${PASS_NUM}: MERGE CONFLICT - manual resolution needed"
         cleanup_worktree "$WT_NAME"
         break
     fi
@@ -301,7 +308,6 @@ If you find no issues, do NOT create a commit - just write the report with ISSUE
     # ── Clean up this pass's worktree ───────────────────────────
     cleanup_worktree "$WT_NAME"
 
-    # If this was the last allowed pass
     if [ "$PASS_NUM" -eq "$MAX_PASSES" ]; then
         FINAL_STATUS="max_passes_reached"
     fi
@@ -320,8 +326,8 @@ SUMMARY_FILE="${REPORTS_DIR}/rechecker_${TIMESTAMP}_summary.md"
     echo "**Total issues fixed**: ${TOTAL_ISSUES_FIXED}"
     echo ""
     echo "## Pass Details"
-    echo "$PASS_SUMMARIES" | tr '.' '\n' | while read -r line; do
-        line=$(echo "$line" | sed 's/^[[:space:]]*//')
+    # PASS_SUMMARIES uses newlines as delimiter (not dots)
+    echo "$PASS_SUMMARIES" | while IFS= read -r line; do
         if [ -n "$line" ]; then
             echo "- ${line}"
         fi
