@@ -44,7 +44,7 @@ Acquires lock (prevents concurrent reviews)
         |
         v
 Inject summary into main Claude's context
-(tells Claude to read the report and amend commit message)
+(tells Claude to READ the summary report)
 ```
 
 ## Features
@@ -57,7 +57,7 @@ Inject summary into main Claude's context
 | **Targeted scanning** | Only scans files changed in the commit via `--target-list` (not the whole codebase) |
 | **Autofix** | Both scan.sh and the review agent fix issues in place |
 | **Iterative loop** | Repeats review-fix cycle until `ISSUES_FOUND: 0` or max 30 passes |
-| **Transient error resilience** | Retries `claude -p` on rate limits, 429, 503, 502, timeouts (3 retries with backoff) |
+| **Transient error resilience** | Retries `claude --worktree` on rate limits, 429, 503, 502, timeouts (3 retries with backoff) |
 | **Agent failure detection** | If reviewer finds issues but fails to commit fixes twice in a row, breaks and reports agent bug |
 | **Merge conflict handling** | Aborts merge on conflict, reports it, stops the loop |
 | **Detailed reports** | Per-pass reports + summary saved to `reports_dev/` |
@@ -173,13 +173,13 @@ The plugin works out of the box with no configuration. Key defaults:
 
 | Setting | Default | Where |
 |---------|---------|-------|
-| Max passes | 30 | `review-loop.sh` line 22 |
-| Scan timeout | 3 hours | `review-loop.sh` prompt |
+| Max passes | 30 | `review-loop.sh` (`MAX_PASSES`) |
+| Scan timeout | 3 hours | `review-loop.sh` (prompt `--scan-timeout`) |
 | Hook timeout | 24 hours | `hooks/hooks.json` |
-| Retry count | 3 | `review-loop.sh` line 133 |
-| Retry delay | 30s base | `review-loop.sh` line 134 |
+| Retry count | 3 | `review-loop.sh` (`MAX_RETRIES`) |
+| Retry delay | 30s base | `review-loop.sh` (`RETRY_DELAY`) |
 | Agent model | sonnet | `agents/code-reviewer.md` frontmatter |
-| Permission mode | acceptEdits | `review-loop.sh` claude invocation |
+| Permission mode | acceptEdits | `review-loop.sh` (`--permission-mode`) |
 
 ### Gitignore
 

@@ -38,8 +38,6 @@ except:
 TOOL_NAME=$(parse_json_field "$HOOK_INPUT" "tool_name")
 COMMAND=$(parse_json_field "$HOOK_INPUT" "tool_input.command")
 PROJECT_DIR=$(parse_json_field "$HOOK_INPUT" "cwd")
-SESSION_ID=$(parse_json_field "$HOOK_INPUT" "session_id")
-
 # Fallback to env var if cwd not in JSON
 PROJECT_DIR="${PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-$(pwd)}}"
 

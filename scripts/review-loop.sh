@@ -121,8 +121,6 @@ for PASS_NUM in $(seq 1 "$MAX_PASSES"); do
     RESET_COMMAND="git reset --hard ${PASS_TARGET_SHA}"
     CHANGED_FILES_GEN="bash ${CHANGED_FILES_SCRIPT} ${PASS_TARGET_SHA} .rechecker_changed_files.txt"
 
-    SCAN_REPORT_FILENAME="rechecker_${TIMESTAMP}_pass${PASS_NUM}_scan.json"
-
     REVIEW_PROMPT="You are reviewing code in a git worktree. Follow these steps EXACTLY:
 
 STEP 1: Run the automated linter and security scan with autofix.
@@ -252,19 +250,24 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
         FOUND_LINE=$(grep -i "^ISSUES_FOUND:" "$REPORT_FILE" 2>/dev/null | tail -1 || echo "")
         if [ -n "$FOUND_LINE" ]; then
             REPORT_HAS_MARKER=true
-            ISSUES_FOUND=$(echo "$FOUND_LINE" | grep -oE '[0-9]+' | head -1 || echo "0")
-            ISSUES_FOUND="${ISSUES_FOUND:-0}"
+            ISSUES_FOUND=$(echo "$FOUND_LINE" | grep -oE '[0-9]+' | head -1 || echo "")
+            # If marker exists but has no numeric value, treat as 1 issue (safer than 0)
+            if [ -z "$ISSUES_FOUND" ]; then
+                ISSUES_FOUND=1
+            fi
         fi
 
         FIXED_LINE=$(grep -i "^ISSUES_FIXED:" "$REPORT_FILE" 2>/dev/null | tail -1 || echo "")
         if [ -n "$FIXED_LINE" ]; then
-            ISSUES_FIXED=$(echo "$FIXED_LINE" | grep -oE '[0-9]+' | head -1 || echo "0")
-            ISSUES_FIXED="${ISSUES_FIXED:-0}"
+            ISSUES_FIXED=$(echo "$FIXED_LINE" | grep -oE '[0-9]+' | head -1 || echo "")
+            if [ -z "$ISSUES_FIXED" ]; then
+                ISSUES_FIXED=0
+            fi
         fi
 
-        # Validate extracted values are numeric (guard against malformed reports)
+        # Validate extracted values are numeric (belt-and-suspenders)
         case "$ISSUES_FOUND" in
-            ''|*[!0-9]*) ISSUES_FOUND=-1 ;;
+            ''|*[!0-9]*) ISSUES_FOUND=1 ;;
         esac
         case "$ISSUES_FIXED" in
             ''|*[!0-9]*) ISSUES_FIXED=0 ;;

@@ -17,7 +17,7 @@
 #
 # Handles:
 #   - First commit in repo (no parent): uses git show --name-only
-#   - Merge commits: diffs against first parent (--first-parent)
+#   - Merge commits: shows combined diff (files changed from any parent)
 #   - Deleted files: excluded (they don't exist on disk to scan)
 #   - Binary files: included (linters can flag them)
 #   - Empty result: exits 0 with no output (caller should check)
