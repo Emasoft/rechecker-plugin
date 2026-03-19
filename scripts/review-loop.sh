@@ -113,13 +113,56 @@ If you find no issues, do NOT create a commit - just write the report with ISSUE
     # ── Run headless Claude with the code-reviewer agent ────────
     cd "$WORKTREE_PATH"
 
-    # Run claude in headless mode with the code-reviewer agent
-    # --permission-mode acceptEdits: auto-accept file edits (safe in ephemeral worktree)
-    claude --agent "$AGENT_FILE" \
-        -p "$REVIEW_PROMPT" \
-        --permission-mode acceptEdits \
-        --no-session-persistence \
-        2>/dev/null || true
+    # Run claude -p with retry logic for transient API errors (rate limits,
+    # server overload, etc.). The headless process may fail due to 429/5xx
+    # errors. We detect this from the exit code and stderr, then wait with
+    # exponential backoff before retrying the same pass.
+    MAX_RETRIES=3
+    RETRY_DELAY=30
+    CLAUDE_EXIT_CODE=0
+
+    for RETRY in $(seq 0 $MAX_RETRIES); do
+        if [ "$RETRY" -gt 0 ]; then
+            WAIT_TIME=$((RETRY_DELAY * RETRY))
+            PASS_SUMMARIES="${PASS_SUMMARIES}(API error on pass ${PASS_NUM}, retry ${RETRY}/${MAX_RETRIES} after ${WAIT_TIME}s.) "
+            sleep "$WAIT_TIME"
+            # Re-enter the worktree in case cd was lost
+            cd "$WORKTREE_PATH"
+        fi
+
+        CLAUDE_STDERR_FILE="${WORKTREE_PATH}/.rechecker_stderr.log"
+        claude --agent "$AGENT_FILE" \
+            -p "$REVIEW_PROMPT" \
+            --permission-mode acceptEdits \
+            --no-session-persistence \
+            2>"$CLAUDE_STDERR_FILE"
+        CLAUDE_EXIT_CODE=$?
+
+        # Exit code 0 = success, proceed to parse report
+        if [ "$CLAUDE_EXIT_CODE" -eq 0 ]; then
+            break
+        fi
+
+        # Check stderr for transient errors worth retrying
+        STDERR_CONTENT=$(cat "$CLAUDE_STDERR_FILE" 2>/dev/null || echo "")
+        IS_TRANSIENT=false
+
+        # Match rate limit, server overload, timeout, and 5xx errors
+        if echo "$STDERR_CONTENT" | grep -qiE "rate.?limit|429|too many requests|overloaded|503|502|504|server error|timeout|ECONNRESET|ETIMEDOUT|capacity"; then
+            IS_TRANSIENT=true
+        fi
+
+        if [ "$IS_TRANSIENT" = "false" ]; then
+            # Non-transient error (auth failure, invalid request, etc.) - do not retry
+            PASS_SUMMARIES="${PASS_SUMMARIES}(API error on pass ${PASS_NUM}: non-transient, skipping retries.) "
+            break
+        fi
+
+        # On last retry, just break (we'll handle the failure below)
+        if [ "$RETRY" -eq "$MAX_RETRIES" ]; then
+            PASS_SUMMARIES="${PASS_SUMMARIES}(API error on pass ${PASS_NUM}: max retries exhausted.) "
+        fi
+    done
 
     # ── Copy report from worktree to reports_dev/ ─────────────────
     # The headless Claude writes the report inside the worktree (sandbox).

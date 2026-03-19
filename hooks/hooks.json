@@ -1,5 +1,5 @@
 {
-  "description": "Rechecker: automated code review after git commits",
+  "description": "Rechecker: automated code review after git commits, with transient error logging",
   "hooks": {
     "PostToolUse": [
       {
@@ -9,6 +9,17 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/rechecker.sh",
             "timeout": 900
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "matcher": "rate_limit|server_error",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/log-stop-failure.sh"
           }
         ]
       }
