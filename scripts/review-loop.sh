@@ -22,6 +22,7 @@ PLUGIN_ROOT="$6"
 MAX_PASSES=30
 AGENT_FILE="${PLUGIN_ROOT}/agents/code-reviewer.md"
 SCAN_SCRIPT="${PLUGIN_ROOT}/scripts/scan.sh"
+CHANGED_FILES_SCRIPT="${PLUGIN_ROOT}/scripts/changed-files.sh"
 
 # ── State tracking ──────────────────────────────────────────────
 TOTAL_ISSUES_FOUND=0
@@ -93,11 +94,11 @@ for PASS_NUM in $(seq 1 "$MAX_PASSES"); do
     if [ "$PASS_NUM" -eq 1 ]; then
         DIFF_COMMAND="git diff ${COMMIT_SHA}~1..${COMMIT_SHA}"
         RESET_COMMAND="git reset --hard ${COMMIT_SHA}"
-        CHANGED_FILES_COMMAND="git diff --name-only ${COMMIT_SHA}~1..${COMMIT_SHA}"
+        CHANGED_FILES_GEN="bash ${CHANGED_FILES_SCRIPT} ${COMMIT_SHA} .rechecker_changed_files.txt"
     else
         DIFF_COMMAND="git diff ${REVIEW_TARGET_SHA}~1..${REVIEW_TARGET_SHA}"
         RESET_COMMAND="git reset --hard ${REVIEW_TARGET_SHA}"
-        CHANGED_FILES_COMMAND="git diff --name-only ${REVIEW_TARGET_SHA}~1..${REVIEW_TARGET_SHA}"
+        CHANGED_FILES_GEN="bash ${CHANGED_FILES_SCRIPT} ${REVIEW_TARGET_SHA} .rechecker_changed_files.txt"
     fi
 
     SCAN_REPORT_FILENAME="rechecker_${TIMESTAMP}_pass${PASS_NUM}_scan.json"
@@ -111,13 +112,16 @@ STEP 1: Run the automated linter and security scan with autofix.
   First, ensure the worktree has the right files checked out:
     ${RESET_COMMAND}
 
-  Then save the list of changed files and run the scan ONLY on those files:
-    ${CHANGED_FILES_COMMAND} > .rechecker_changed_files.txt
+  Then generate the list of changed files and run the scan ONLY on those files:
+    ${CHANGED_FILES_GEN}
     bash ${SCAN_SCRIPT} --autofix --target-list .rechecker_changed_files.txt -o . .
 
-  IMPORTANT: The scan MUST use --target-list to scan only the changed files.
-  Do NOT run scan.sh without --target-list, as that would scan the entire codebase
-  and autofix unrelated files.
+  The changed-files.sh helper generates a clean list (one path per line, excludes
+  deleted files, handles first commits and merge commits). The --target-list flag
+  tells scan.sh to scan only those files instead of the entire codebase.
+
+  IMPORTANT: Do NOT run scan.sh without --target-list, as that would scan the
+  entire codebase and autofix unrelated files.
 
   The script prints the scan report file path to stdout. Read that report file.
   If the scan fails (e.g. Docker not available, no changed files), just continue to STEP 2.
