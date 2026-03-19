@@ -198,7 +198,7 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
         claude --worktree "$WT_NAME" \
             --agent "$AGENT_FILE" \
             -p "$REVIEW_PROMPT" \
-            --permission-mode bypassPermissions \
+            --dangerously-skip-permissions \
             2>"$CLAUDE_STDERR_FILE"
         CLAUDE_EXIT_CODE=$?
 
