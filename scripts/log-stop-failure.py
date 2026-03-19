@@ -4,6 +4,7 @@
 Logs transient API errors (rate limits, server errors) for awareness.
 StopFailure is notification-only: exit codes and output are ignored.
 """
+
 import json
 import sys
 from datetime import datetime
@@ -31,7 +32,9 @@ def main():
         log_file = log_dir / "rechecker_api_errors.log"
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with open(log_file, "a") as f:
-            f.write(f"[{ts}] StopFailure: error={error} details={error_details} session={session_id}\n")
+            f.write(
+                f"[{ts}] StopFailure: error={error} details={error_details} session={session_id}\n"
+            )
     except OSError:
         pass
 

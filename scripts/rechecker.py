@@ -4,6 +4,7 @@
 Detects git commit commands, acquires lock, invokes review loop.
 Outputs JSON with additionalContext for the main Claude session.
 """
+
 import json
 import os
 import re
@@ -51,12 +52,16 @@ def output_hook_json(context_msg):
     escaped = json.dumps(context_msg)
     # json.dumps adds quotes, strip them for embedding in the template
     escaped_inner = escaped[1:-1]
-    print(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "PostToolUse",
-            "additionalContext": f"[Rechecker] {escaped_inner}"
-        }
-    }))
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                    "additionalContext": f"[Rechecker] {escaped_inner}",
+                }
+            }
+        )
+    )
 
 
 def main():
@@ -86,7 +91,8 @@ def main():
     # Gate: verify we are in a git repository
     r = subprocess.run(
         ["git", "rev-parse", "--is-inside-work-tree"],
-        capture_output=True, cwd=project_dir
+        capture_output=True,
+        cwd=project_dir,
     )
     if r.returncode != 0:
         sys.exit(0)
@@ -97,7 +103,9 @@ def main():
         for d in os.environ.get("PATH", "").split(os.pathsep)
         if d
     ):
-        output_hook_json("ERROR: 'claude' CLI not found on PATH. Cannot run automated review.")
+        output_hook_json(
+            "ERROR: 'claude' CLI not found on PATH. Cannot run automated review."
+        )
         sys.exit(0)
 
     # Acquire lock
@@ -129,12 +137,12 @@ def main():
     signal.signal(signal.SIGINT, lambda *a: (cleanup(), sys.exit(130)))
     signal.signal(signal.SIGTERM, lambda *a: (cleanup(), sys.exit(143)))
     import atexit
+
     atexit.register(cleanup)
 
     # Get commit info
     r = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        capture_output=True, text=True, cwd=project_dir
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=project_dir
     )
     commit_sha = r.stdout.strip() if r.returncode == 0 else ""
     if not commit_sha:
@@ -142,7 +150,9 @@ def main():
 
     r = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True, text=True, cwd=project_dir
+        capture_output=True,
+        text=True,
+        cwd=project_dir,
     )
     current_branch = r.stdout.strip() if r.returncode == 0 else "main"
 
@@ -152,8 +162,7 @@ def main():
 
     # Resolve plugin root
     plugin_root = os.environ.get(
-        "CLAUDE_PLUGIN_ROOT",
-        str(Path(__file__).resolve().parent.parent)
+        "CLAUDE_PLUGIN_ROOT", str(Path(__file__).resolve().parent.parent)
     )
 
     # Run the review loop
@@ -162,10 +171,18 @@ def main():
 
     try:
         r = subprocess.run(
-            [sys.executable, str(review_loop_script),
-             project_dir, commit_sha, current_branch,
-             str(reports_dir), timestamp, plugin_root],
-            capture_output=True, text=True
+            [
+                sys.executable,
+                str(review_loop_script),
+                project_dir,
+                commit_sha,
+                current_branch,
+                str(reports_dir),
+                timestamp,
+                plugin_root,
+            ],
+            capture_output=True,
+            text=True,
         )
         loop_result = r.stdout.strip() if r.stdout.strip() else "Review completed."
     except Exception:

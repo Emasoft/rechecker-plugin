@@ -14,6 +14,7 @@ Handles:
     - Binary files: included (linters can flag them)
     - Empty result: exits 0 with no output (caller should check)
 """
+
 import subprocess
 import sys
 
