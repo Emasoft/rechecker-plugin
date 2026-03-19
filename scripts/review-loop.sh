@@ -112,18 +112,27 @@ STEP 1: Run the automated linter and security scan with autofix.
   First, ensure the worktree has the right files checked out:
     ${RESET_COMMAND}
 
-  Then generate the list of changed files and run the scan ONLY on those files:
+  Then generate the list of changed files and run the scan ONLY on those files.
+  The scan report MUST go into a subdirectory (not the worktree root) to avoid
+  polluting the worktree with untracked files that would be caught by git add -A.
+
     ${CHANGED_FILES_GEN}
-    bash ${SCAN_SCRIPT} --autofix --target-list .rechecker_changed_files.txt -o . .
+    mkdir -p .rechecker_scan_output
+    bash ${SCAN_SCRIPT} --autofix --target-list .rechecker_changed_files.txt --scan-timeout 300 --skip-pull -o .rechecker_scan_output .
 
   The changed-files.sh helper generates a clean list (one path per line, excludes
   deleted files, handles first commits and merge commits). The --target-list flag
   tells scan.sh to scan only those files instead of the entire codebase.
+  --scan-timeout 300 limits each tool to 5 minutes (not the default 1 hour).
+  --skip-pull uses cached Docker images (avoids re-pulling on every pass).
 
   IMPORTANT: Do NOT run scan.sh without --target-list, as that would scan the
   entire codebase and autofix unrelated files.
 
   The script prints the scan report file path to stdout. Read that report file.
+  After reading the report, clean up scan artifacts so they don't pollute the commit:
+    rm -rf .rechecker_scan_output .rechecker_changed_files.txt
+
   If the scan fails (e.g. Docker not available, no changed files), just continue to STEP 2.
   The scan is a best-effort enhancement, not a hard requirement.
   If the scan auto-fixed files, note what was fixed. Those fixes are already applied in place.
@@ -209,17 +218,15 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
         cp "$WT_REPORT_FILE" "$REPORT_FILE"
     fi
 
-    # Also copy the scan report if it exists
-    WT_SCAN_REPORT="${WORKTREE_PATH}/${SCAN_REPORT_FILENAME}"
-    if [ -f "$WT_SCAN_REPORT" ]; then
-        cp "$WT_SCAN_REPORT" "${REPORTS_DIR}/${SCAN_REPORT_FILENAME}"
+    # Also copy scan reports from the subdirectory if they exist
+    WT_SCAN_DIR="${WORKTREE_PATH}/.rechecker_scan_output"
+    if [ -d "$WT_SCAN_DIR" ]; then
+        for scan_file in "${WT_SCAN_DIR}"/*.json "${WT_SCAN_DIR}"/*.log; do
+            if [ -f "$scan_file" ]; then
+                cp "$scan_file" "${REPORTS_DIR}/" 2>/dev/null || true
+            fi
+        done
     fi
-    # scan.sh may have saved the report with its own timestamp name; grab any JSON reports
-    for scan_json in "${WORKTREE_PATH}"/scan_report_*.json; do
-        if [ -f "$scan_json" ]; then
-            cp "$scan_json" "${REPORTS_DIR}/" 2>/dev/null || true
-        fi
-    done
 
     if [ -f "$REPORT_FILE" ]; then
         FOUND_LINE=$(grep -i "^ISSUES_FOUND:" "$REPORT_FILE" 2>/dev/null | tail -1 || echo "")
