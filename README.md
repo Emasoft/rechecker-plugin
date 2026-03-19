@@ -1,4 +1,11 @@
-# rechecker-plugin v2.0.0
+# rechecker-plugin
+
+<!--BADGES-START-->
+[![CI](https://github.com/Emasoft/rechecker-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/Emasoft/rechecker-plugin/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue)](https://github.com/Emasoft/rechecker-plugin)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Validation](https://github.com/Emasoft/rechecker-plugin/actions/workflows/validate.yml/badge.svg)](https://github.com/Emasoft/rechecker-plugin/actions/workflows/validate.yml)
+<!--BADGES-END-->
 
 A Claude Code plugin that automatically reviews and fixes code changes after every git commit. It spawns a separate Claude instance in an isolated git worktree, runs automated linters and security scanners, performs a thorough manual code review, fixes all issues found, and loops until the code is clean — or reports what remains.
 
@@ -162,7 +169,31 @@ Reports are saved to `<project>/reports_dev/` with these files:
 | No changed files | Clean exit (nothing to review) |
 | First commit (no parent) | Handled via `git show` fallback |
 
+## Components
+
+| Type | Name | Description |
+|------|------|-------------|
+| Hook | `PostToolUse` → `rechecker.py` | Auto-triggers code review after every `git commit` |
+| Hook | `StopFailure` → `log-stop-failure.py` | Logs API errors (rate limits, server errors) |
+| Agent | `code-reviewer` | Opus 4.6 (1M) agent that reviews diffs, finds bugs, fixes them |
+| Skill | `/recheck` | On-demand review trigger for any commit |
+
 ## Installation
+
+### From Marketplace
+
+```bash
+claude plugin marketplace add Emasoft/emasoft-plugins
+claude plugin install rechecker-plugin@emasoft-plugins
+```
+
+### From GitHub
+
+```bash
+claude plugin install --source github Emasoft/rechecker-plugin
+```
+
+### Manual (Development)
 
 ```bash
 # Symlink (recommended for development)
@@ -173,6 +204,18 @@ cp -r /path/to/rechecker-plugin ~/.claude/plugins/rechecker-plugin
 ```
 
 Restart Claude Code, then type `/hooks` to confirm the PostToolUse hook appears.
+
+## Uninstall
+
+```bash
+claude plugin uninstall rechecker-plugin
+```
+
+## Update
+
+```bash
+claude plugin update rechecker-plugin@emasoft-plugins
+```
 
 ## Configuration
 
@@ -227,6 +270,21 @@ reports_dev/
 | Infinite loops | Max 30 passes + no-fix detection (breaks after 2 consecutive failures) |
 | Secret exposure | TruffleHog detects secrets; scan runs in Docker sandbox |
 
+## Troubleshooting
+
+### Hook path not found
+If you get "can't open file" errors from hooks, reinstall the plugin or check that `${CLAUDE_PLUGIN_ROOT}` resolves correctly in your Claude Code session.
+
+### Old version after update
+Claude Code may cache the old version. Restart Claude Code to pick up changes.
+
+### Restart required after update
+After updating the plugin, restart Claude Code to reload all hooks and agents.
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE)
+
+## Author
+
+**Emasoft** — [GitHub](https://github.com/Emasoft)
