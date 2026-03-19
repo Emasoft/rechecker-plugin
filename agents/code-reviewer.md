@@ -23,7 +23,7 @@ Follow the STEP instructions in the prompt exactly. The prompt tells you which c
       This helper script outputs one file path per line, excludes deleted files (they don't exist
       on disk), and handles edge cases like first commits and merge commits. It saves the list to
       `.rechecker_changed_files.txt`.
-   c. Then, run `scan.sh --autofix --target-list .rechecker_changed_files.txt -o .rechecker_scan_output .`
+   c. Then, run `scan.sh --autofix --target-list .rechecker_changed_files.txt --scan-timeout 10800 --skip-pull -o .rechecker_scan_output .`
       The `--target-list` flag tells scan.sh to scan ONLY the files listed in the text file,
       not the entire codebase. The `-o .rechecker_scan_output` saves the scan report in a
       subdirectory to avoid polluting the worktree root (which would be caught by `git add -A`).
@@ -184,7 +184,7 @@ ISSUES_FIXED: 0
       - If empty: no files to review, write report with ISSUES_FOUND: 0 and exit
 
 [ ] 3. SCAN EXECUTED
-      - Ran scan.sh with --autofix --target-list .rechecker_changed_files.txt -o . .
+      - Ran scan.sh with --autofix --target-list .rechecker_changed_files.txt --scan-timeout 10800 --skip-pull -o .rechecker_scan_output .
       - Captured the report file path from stdout
       - Read the scan report JSON
       - Noted how many issues each tool found (Super-Linter, Semgrep, TruffleHog)

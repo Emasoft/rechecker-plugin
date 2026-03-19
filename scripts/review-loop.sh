@@ -56,9 +56,9 @@ cleanup_worktree() {
     cd "$PROJECT_DIR"
     # Prune stale worktree entries first
     git worktree prune 2>/dev/null || true
-    # Try proper removal, then fallback to rm only if path is under .claude/worktrees/
+    # Try proper removal, then fallback to rm only if path is strictly under .claude/worktrees/
     if ! git worktree remove --force "$wt_path" 2>/dev/null; then
-        if [ -d "$wt_path" ] && echo "$wt_path" | grep -q "/.claude/worktrees/"; then
+        if [ -d "$wt_path" ] && [[ "$wt_path" == "${PROJECT_DIR}/.claude/worktrees/"* ]]; then
             rm -rf "$wt_path" 2>/dev/null || true
         fi
     fi
@@ -107,8 +107,14 @@ for PASS_NUM in $(seq 1 "$MAX_PASSES"); do
     # PASS_TARGET_SHA is the commit the agent should reset to and review.
     # For pass 1: the triggering commit.
     # For pass N>1: the post-merge HEAD from the previous pass (includes fixes).
+    # Detect first commit (no parent) to avoid "bad revision SHA~1" error
     if [ "$PASS_NUM" -eq 1 ]; then
-        DIFF_COMMAND="git diff ${COMMIT_SHA}~1..${COMMIT_SHA}"
+        if git rev-parse "${COMMIT_SHA}~1" >/dev/null 2>&1; then
+            DIFF_COMMAND="git diff ${COMMIT_SHA}~1..${COMMIT_SHA}"
+        else
+            # First commit in repo: use git show to display all changes
+            DIFF_COMMAND="git show --format='' ${COMMIT_SHA}"
+        fi
     else
         DIFF_COMMAND="git diff ${PRE_MERGE_SHA}..${PASS_TARGET_SHA}"
     fi
@@ -190,7 +196,7 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
             cd "$PROJECT_DIR"
         fi
 
-        CLAUDE_STDERR_FILE="${PROJECT_DIR}/.rechecker_stderr.log"
+        CLAUDE_STDERR_FILE="${PROJECT_DIR}/.rechecker_stderr_${TIMESTAMP}_pass${PASS_NUM}.log"
         claude --worktree "$WT_NAME" \
             --agent "$AGENT_FILE" \
             -p "$REVIEW_PROMPT" \
@@ -255,6 +261,14 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
             ISSUES_FIXED=$(echo "$FIXED_LINE" | grep -oE '[0-9]+' | head -1 || echo "0")
             ISSUES_FIXED="${ISSUES_FIXED:-0}"
         fi
+
+        # Validate extracted values are numeric (guard against malformed reports)
+        case "$ISSUES_FOUND" in
+            ''|*[!0-9]*) ISSUES_FOUND=-1 ;;
+        esac
+        case "$ISSUES_FIXED" in
+            ''|*[!0-9]*) ISSUES_FIXED=0 ;;
+        esac
     fi
 
     # If no valid report, treat as unknown issues (never assume clean).
@@ -388,7 +402,7 @@ SUMMARY_FILE="${REPORTS_DIR}/rechecker_${TIMESTAMP}_summary.md"
     echo ""
     echo "## Pass Details"
     # PASS_SUMMARIES uses newlines as delimiter (not dots)
-    echo "$PASS_SUMMARIES" | while IFS= read -r line; do
+    echo "$PASS_SUMMARIES" | while IFS= read -r line || [ -n "$line" ]; do
         if [ -n "$line" ]; then
             echo "- ${line}"
         fi
@@ -403,7 +417,7 @@ SUMMARY_FILE="${REPORTS_DIR}/rechecker_${TIMESTAMP}_summary.md"
 } > "$SUMMARY_FILE"
 
 # ── Output summary to stdout (captured by rechecker.sh) ────────
-REPORT_INSTRUCTION="READ the summary report now: ${SUMMARY_FILE} -- then use the report content as your next commit message (amend the previous commit with: git commit --amend -m '<report content>')."
+REPORT_INSTRUCTION="READ the summary report now: ${SUMMARY_FILE}"
 
 if [ "$FINAL_STATUS" = "clean" ]; then
     echo "Review completed (${FINAL_STATUS}). ${TOTAL_ISSUES_FOUND} total issues found across all passes, ${TOTAL_ISSUES_FIXED} fixed. All code changes verified clean. ${REPORT_INSTRUCTION}"

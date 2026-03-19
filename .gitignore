@@ -1,5 +1,6 @@
 # Rechecker runtime artifacts
 .rechecker/
+llm_externalizer_output/
 
 # Dev folders (gitignored per convention)
 reports_dev/
