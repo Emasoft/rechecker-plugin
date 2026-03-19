@@ -118,12 +118,12 @@ STEP 1: Run the automated linter and security scan with autofix.
 
     ${CHANGED_FILES_GEN}
     mkdir -p .rechecker_scan_output
-    bash ${SCAN_SCRIPT} --autofix --target-list .rechecker_changed_files.txt --scan-timeout 300 --skip-pull -o .rechecker_scan_output .
+    bash ${SCAN_SCRIPT} --autofix --target-list .rechecker_changed_files.txt --scan-timeout 10800 --skip-pull -o .rechecker_scan_output .
 
   The changed-files.sh helper generates a clean list (one path per line, excludes
   deleted files, handles first commits and merge commits). The --target-list flag
   tells scan.sh to scan only those files instead of the entire codebase.
-  --scan-timeout 300 limits each tool to 5 minutes (not the default 1 hour).
+  --scan-timeout 10800 allows up to 3 hours total for the scan.
   --skip-pull uses cached Docker images (avoids re-pulling on every pass).
 
   IMPORTANT: Do NOT run scan.sh without --target-list, as that would scan the
