@@ -198,7 +198,7 @@ reports_dev/
 | `python3` on PATH | JSON parsing in hook scripts |
 | `git` repository | Worktrees, diffs, commits |
 | Docker (optional) | Required for scan.sh (Super-Linter, Semgrep, TruffleHog) |
-| Max subscription | `claude -p` uses your Max subscription auth |
+| Max subscription | `claude --worktree` uses your Max subscription auth |
 
 ## Cross-Platform Compatibility
 
