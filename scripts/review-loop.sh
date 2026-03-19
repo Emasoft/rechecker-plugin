@@ -19,8 +19,9 @@ REPORTS_DIR="$4"
 TIMESTAMP="$5"
 PLUGIN_ROOT="$6"
 
-MAX_PASSES=5
+MAX_PASSES=30
 AGENT_FILE="${PLUGIN_ROOT}/agents/code-reviewer.md"
+SCAN_SCRIPT="${PLUGIN_ROOT}/scripts/scan.sh"
 
 # ── State tracking ──────────────────────────────────────────────
 TOTAL_ISSUES_FOUND=0
@@ -100,30 +101,46 @@ for PASS_NUM in $(seq 1 "$MAX_PASSES"); do
         RESET_COMMAND="git reset --hard ${REVIEW_TARGET_SHA}"
     fi
 
+    # Build the scan report filename for this pass
+    SCAN_REPORT_FILENAME="rechecker_${TIMESTAMP}_pass${PASS_NUM}_scan.json"
+
     REVIEW_PROMPT="You are reviewing code in a git worktree. Follow these steps EXACTLY:
 
 STEP 1: Reset the worktree to match the commit being reviewed:
   ${RESET_COMMAND}
 
-STEP 2: View the code changes to review:
+STEP 2: Run the automated linter and security scan with autofix.
+  This runs Super-Linter (40+ language linters), Semgrep (security), and TruffleHog (secrets).
+  It auto-fixes style and security issues where supported.
+  Run this command:
+    bash ${SCAN_SCRIPT} --autofix -o . .
+  The script prints the report file path to stdout. Read that report file.
+  IMPORTANT: If the scan fails (e.g. Docker not available), just continue to STEP 3.
+  The scan is a best-effort enhancement, not a hard requirement.
+  If the scan auto-fixed files, note what was fixed. Those fixes are already applied.
+
+STEP 3: View the code changes to review (the original commit diff):
   ${DIFF_COMMAND}
 
-STEP 3: Review every changed file thoroughly using the checklist in your agent instructions.
+STEP 4: Review every changed file thoroughly using the checklist in your agent instructions.
+  Also review any remaining (unfixed) findings from the scan report in STEP 2.
 
-STEP 4: Fix any issues you find by editing the source files.
+STEP 5: Fix any issues you find by editing the source files.
+  Do NOT re-fix things the scan already auto-fixed in STEP 2.
 
-STEP 5: If you made fixes, commit them:
+STEP 6: If you made fixes (in STEP 5) OR if the scan made fixes (in STEP 2), commit everything:
   git add -A && git commit -m 'rechecker: pass ${PASS_NUM} fixes'
 
-STEP 6: Write your review report to: ${REPORT_FILENAME}
+STEP 7: Write your review report to: ${REPORT_FILENAME}
   (Use the Write tool to save it in the current working directory.)
+  Include a section for scan results (what the scan found, what it auto-fixed, what remains).
 
 Context:
 - Commit message: ${COMMIT_MSG}
 - Commit SHA: ${COMMIT_SHA}
 - Review pass: ${PASS_NUM} of ${MAX_PASSES}
 
-If you find NO issues, do NOT create a commit. Just write the report with ISSUES_FOUND: 0"
+If you find NO issues AND the scan found NO issues, do NOT create a commit. Just write the report with ISSUES_FOUND: 0"
 
     # ── Run headless Claude in a managed worktree ────────────────
     # Retry logic for transient API errors (rate limits, server overload).
@@ -182,6 +199,18 @@ If you find NO issues, do NOT create a commit. Just write the report with ISSUES
     if [ -f "$WT_REPORT_FILE" ]; then
         cp "$WT_REPORT_FILE" "$REPORT_FILE"
     fi
+
+    # Also copy the scan report if it exists
+    WT_SCAN_REPORT="${WORKTREE_PATH}/${SCAN_REPORT_FILENAME}"
+    if [ -f "$WT_SCAN_REPORT" ]; then
+        cp "$WT_SCAN_REPORT" "${REPORTS_DIR}/${SCAN_REPORT_FILENAME}"
+    fi
+    # scan.sh may have saved the report with its own timestamp name; grab any JSON reports
+    for scan_json in "${WORKTREE_PATH}"/scan_report_*.json; do
+        if [ -f "$scan_json" ]; then
+            cp "$scan_json" "${REPORTS_DIR}/" 2>/dev/null || true
+        fi
+    done
 
     if [ -f "$REPORT_FILE" ]; then
         FOUND_LINE=$(grep -i "^ISSUES_FOUND:" "$REPORT_FILE" 2>/dev/null | tail -1 || echo "")

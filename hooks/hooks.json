@@ -8,7 +8,7 @@
           {
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/rechecker.sh",
-            "timeout": 900
+            "timeout": 7200
           }
         ]
       }
