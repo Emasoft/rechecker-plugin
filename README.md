@@ -64,6 +64,7 @@ Inject summary into main Claude's context
 | **Execution checklist** | 10-item mandatory checklist the agent must complete before exiting |
 | **StopFailure logging** | Logs API errors (rate limits, server errors) to `reports_dev/rechecker_api_errors.log` |
 | **Lock file** | PID-based lock prevents concurrent review cycles |
+| **On-demand review** | `/recheck` slash command triggers the same review loop manually on any commit |
 | **Cross-platform** | Bash 3.2+ (macOS), Bash 4/5 (Linux), WSL compatible |
 
 ## Plugin Structure
@@ -76,6 +77,9 @@ rechecker-plugin/
 |   +-- hooks.json               # PostToolUse on Bash + StopFailure logging
 +-- agents/
 |   +-- code-reviewer.md         # Agent definition with review checklist + execution checklist
++-- skills/
+|   +-- recheck/
+|       +-- SKILL.md             # /recheck slash command: on-demand review trigger
 +-- scripts/
 |   +-- rechecker.sh             # Entry point: commit detection, locking, JSON I/O
 |   +-- review-loop.sh           # Core loop: worktree, scan, review, merge, retry
