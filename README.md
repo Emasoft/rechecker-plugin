@@ -179,7 +179,7 @@ The plugin works out of the box with no configuration. Key defaults:
 | Retry count | 3 | `review-loop.sh` (`MAX_RETRIES`) |
 | Retry delay | 30s base | `review-loop.sh` (`RETRY_DELAY`) |
 | Agent model | sonnet | `agents/code-reviewer.md` frontmatter |
-| Permission mode | acceptEdits | `review-loop.sh` (`--permission-mode`) |
+| Permission mode | bypassPermissions | `review-loop.sh` (`--permission-mode`) |
 
 ### Gitignore
 
