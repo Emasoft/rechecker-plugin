@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # rechecker.sh - PostToolUse hook entry point
 # Detects git commit commands, acquires lock, invokes review loop
-set -euo pipefail
+# set -o pipefail may not be supported on macOS Bash 3.2
+set -eu
+set -o pipefail 2>/dev/null || true
+
+# ── Dependency check ─────────────────────────────────────────────
+if ! command -v python3 >/dev/null 2>&1; then
+    exit 0
+fi
 
 # ── Read hook input from stdin ──────────────────────────────────
 HOOK_INPUT=$(cat)
@@ -50,16 +57,18 @@ import sys, re
 
 cmd = sys.argv[1]
 
-# Split on && and ; to handle compound commands
+# If --amend appears ANYWHERE in the full command, reject it entirely.
+# This prevents false positives like 'git commit -m msg; git commit --amend'
+if re.search(r'--amend', cmd):
+    sys.exit(1)
+
+# Split on && and ; and | to handle compound commands
 parts = re.split(r'&&|;|\|', cmd)
 
 for part in parts:
     part = part.strip()
-    # Match: git commit (with optional flags) but NOT --amend
+    # Match: 'git commit' as a distinct command (not inside a string/comment)
     if re.search(r'\bgit\s+commit\b', part):
-        if re.search(r'--amend', part):
-            continue
-        # Found a real git commit (not amend)
         sys.exit(0)
 
 # No git commit found
@@ -120,6 +129,7 @@ echo $$ > "$LOCK_FILE"
 cleanup() {
     rm -f "$LOCK_FILE"
 }
+trap 'cleanup; exit' INT TERM
 trap cleanup EXIT
 
 # ── Get commit info ─────────────────────────────────────────────

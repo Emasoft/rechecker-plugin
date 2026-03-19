@@ -9,7 +9,8 @@
 # the agent runs 'git diff' itself using the commit SHA (all git objects are
 # shared across worktrees). The agent also resets its worktree to match the
 # commit state with 'git reset --hard <SHA>' before reviewing.
-set -euo pipefail
+set -eu
+set -o pipefail 2>/dev/null || true
 
 # ── Parameters ──────────────────────────────────────────────────
 PROJECT_DIR="$1"
@@ -42,7 +43,9 @@ FINAL_STATUS="unknown"
 # Track consecutive no-fix passes to detect persistent agent failure
 CONSECUTIVE_NO_FIX=0
 MAX_CONSECUTIVE_NO_FIX=2
-# Track the HEAD before each pass so we know what diff to review next
+# PRE_MERGE_SHA = HEAD before a merge (used as diff base for pass N+1)
+# REVIEW_TARGET_SHA = HEAD after a merge (used as reset target for pass N+1)
+PRE_MERGE_SHA="${COMMIT_SHA}"
 REVIEW_TARGET_SHA="${COMMIT_SHA}"
 
 # ── Helper: clean up a Claude-managed worktree and its branch ───
@@ -51,7 +54,14 @@ cleanup_worktree() {
     local wt_path="${PROJECT_DIR}/.claude/worktrees/${wt_name}"
     local branch_name="worktree-${wt_name}"
     cd "$PROJECT_DIR"
-    git worktree remove --force "$wt_path" 2>/dev/null || rm -rf "$wt_path" 2>/dev/null || true
+    # Prune stale worktree entries first
+    git worktree prune 2>/dev/null || true
+    # Try proper removal, then fallback to rm only if path is under .claude/worktrees/
+    if ! git worktree remove --force "$wt_path" 2>/dev/null; then
+        if [ -d "$wt_path" ] && echo "$wt_path" | grep -q "/.claude/worktrees/"; then
+            rm -rf "$wt_path" 2>/dev/null || true
+        fi
+    fi
     git branch -D "$branch_name" 2>/dev/null || true
 }
 
@@ -73,15 +83,18 @@ for PASS_NUM in $(seq 1 "$MAX_PASSES"); do
     if [ "$PASS_NUM" -eq 1 ]; then
         # First pass: review the triggering commit
         COMMIT_MSG=$(git log -1 --format="%s" "${COMMIT_SHA}" 2>/dev/null || echo "Unknown")
-        # Verify the commit has actual changes (not empty)
         DIFF_STAT=$(git diff --stat "${COMMIT_SHA}~1..${COMMIT_SHA}" 2>/dev/null || \
                     git show --stat "${COMMIT_SHA}" --format="" 2>/dev/null || echo "")
+        # The target for diff/reset/changed-files is the triggering commit
+        PASS_TARGET_SHA="${COMMIT_SHA}"
     else
-        # Subsequent passes: review what the previous merge introduced
+        # Subsequent passes: review what the previous merge introduced.
+        # REVIEW_TARGET_SHA was set AFTER the merge in the previous pass
+        # (= the post-merge HEAD), so it represents the NEW state including fixes.
+        # We diff from pre-merge to post-merge to see exactly what was fixed.
         COMMIT_MSG="Rechecker pass $((PASS_NUM - 1)) fixes"
-        DIFF_STAT=$(git diff --stat "${REVIEW_TARGET_SHA}..HEAD" 2>/dev/null || echo "")
-        # Update the target SHA for git diff commands used by the agent
-        REVIEW_TARGET_SHA=$(git rev-parse HEAD 2>/dev/null || echo "$COMMIT_SHA")
+        DIFF_STAT=$(git diff --stat "${PRE_MERGE_SHA}..${REVIEW_TARGET_SHA}" 2>/dev/null || echo "")
+        PASS_TARGET_SHA="${REVIEW_TARGET_SHA}"
     fi
 
     if [ -z "$DIFF_STAT" ]; then
@@ -91,15 +104,16 @@ for PASS_NUM in $(seq 1 "$MAX_PASSES"); do
     fi
 
     # ── Build the prompt ────────────────────────────────────────
+    # PASS_TARGET_SHA is the commit the agent should reset to and review.
+    # For pass 1: the triggering commit.
+    # For pass N>1: the post-merge HEAD from the previous pass (includes fixes).
     if [ "$PASS_NUM" -eq 1 ]; then
         DIFF_COMMAND="git diff ${COMMIT_SHA}~1..${COMMIT_SHA}"
-        RESET_COMMAND="git reset --hard ${COMMIT_SHA}"
-        CHANGED_FILES_GEN="bash ${CHANGED_FILES_SCRIPT} ${COMMIT_SHA} .rechecker_changed_files.txt"
     else
-        DIFF_COMMAND="git diff ${REVIEW_TARGET_SHA}~1..${REVIEW_TARGET_SHA}"
-        RESET_COMMAND="git reset --hard ${REVIEW_TARGET_SHA}"
-        CHANGED_FILES_GEN="bash ${CHANGED_FILES_SCRIPT} ${REVIEW_TARGET_SHA} .rechecker_changed_files.txt"
+        DIFF_COMMAND="git diff ${PRE_MERGE_SHA}..${PASS_TARGET_SHA}"
     fi
+    RESET_COMMAND="git reset --hard ${PASS_TARGET_SHA}"
+    CHANGED_FILES_GEN="bash ${CHANGED_FILES_SCRIPT} ${PASS_TARGET_SHA} .rechecker_changed_files.txt"
 
     SCAN_REPORT_FILENAME="rechecker_${TIMESTAMP}_pass${PASS_NUM}_scan.json"
 
@@ -337,10 +351,12 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
         break
     fi
 
-    # Record HEAD before merge for diffing in the next pass
-    REVIEW_TARGET_SHA=$(git rev-parse HEAD)
+    # Record HEAD before merge (diff base for the next pass)
+    PRE_MERGE_SHA=$(git rev-parse HEAD)
 
     if git merge --no-edit "$WT_BRANCH" 2>/dev/null; then
+        # Record POST-merge HEAD so the next pass reviews the right changes
+        REVIEW_TARGET_SHA=$(git rev-parse HEAD)
         add_summary "Pass ${PASS_NUM}: Fixes merged successfully"
     else
         git merge --abort 2>/dev/null || true

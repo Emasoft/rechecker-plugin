@@ -21,7 +21,8 @@
 #   - Deleted files: excluded (they don't exist on disk to scan)
 #   - Binary files: included (linters can flag them)
 #   - Empty result: exits 0 with no output (caller should check)
-set -euo pipefail
+set -eu
+set -o pipefail 2>/dev/null || true
 
 COMMIT_SHA="${1:-}"
 OUTPUT_FILE="${2:-}"
@@ -43,22 +44,11 @@ if ! git cat-file -t "$COMMIT_SHA" >/dev/null 2>&1; then
     exit 1
 fi
 
-# Generate the list of changed files.
-# --diff-filter=d excludes deleted files (they don't exist on disk).
-# --no-renames treats renames as delete+add (so the new path is listed).
-CHANGED=""
-
-# Try diffing against parent first (normal case)
-if git rev-parse "${COMMIT_SHA}~1" >/dev/null 2>&1; then
-    CHANGED=$(git diff --name-only --diff-filter=d --no-renames \
-        "${COMMIT_SHA}~1..${COMMIT_SHA}" 2>/dev/null || echo "")
-fi
-
-# Fallback for first commit in repo (no parent)
-if [ -z "$CHANGED" ]; then
-    CHANGED=$(git show --name-only --format="" --diff-filter=d \
-        "$COMMIT_SHA" 2>/dev/null || echo "")
-fi
+# Generate the list of changed files using git show (works uniformly for
+# normal commits, first commits, and merge commits).
+# --diff-filter=d excludes deleted files (they don't exist on disk to scan).
+CHANGED=$(git show --name-only --format="" --diff-filter=d \
+    "$COMMIT_SHA" 2>/dev/null || echo "")
 
 # Filter out empty lines
 CHANGED=$(echo "$CHANGED" | sed '/^$/d')

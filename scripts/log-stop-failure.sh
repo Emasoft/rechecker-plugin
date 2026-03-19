@@ -2,7 +2,8 @@
 # log-stop-failure.sh - StopFailure hook handler
 # Logs transient API errors (rate limits, server errors) for awareness.
 # StopFailure is notification-only: exit codes and output are ignored.
-set -euo pipefail
+set -eu
+set -o pipefail 2>/dev/null || true
 
 INPUT=$(cat)
 

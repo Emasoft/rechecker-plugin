@@ -23,9 +23,11 @@ Follow the STEP instructions in the prompt exactly. The prompt tells you which c
       This helper script outputs one file path per line, excludes deleted files (they don't exist
       on disk), and handles edge cases like first commits and merge commits. It saves the list to
       `.rechecker_changed_files.txt`.
-   c. Then, run `scan.sh --autofix --target-list .rechecker_changed_files.txt -o . .`
+   c. Then, run `scan.sh --autofix --target-list .rechecker_changed_files.txt -o .rechecker_scan_output .`
       The `--target-list` flag tells scan.sh to scan ONLY the files listed in the text file,
-      not the entire codebase. This is critical: without it, the scan would lint unrelated files
+      not the entire codebase. The `-o .rechecker_scan_output` saves the scan report in a
+      subdirectory to avoid polluting the worktree root (which would be caught by `git add -A`).
+      This is critical: without --target-list, the scan would lint unrelated files
       and autofix code that wasn't part of the commit.
    d. scan.sh prints the report file path to stdout. Read that JSON report to see what the scan
       found. It runs Super-Linter (40+ linters with autofix), Semgrep (OWASP security with
