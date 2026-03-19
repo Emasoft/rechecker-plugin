@@ -19,13 +19,13 @@ import subprocess
 import sys
 
 
-def run_git(*args):
+def run_git(*args: str) -> tuple[str, int]:
     """Run a git command, return (stdout, returncode)."""
     r = subprocess.run(["git"] + list(args), capture_output=True, text=True)
     return r.stdout.strip(), r.returncode
 
 
-def main():
+def main() -> None:
     commit_sha = sys.argv[1] if len(sys.argv) > 1 else ""
     output_file = sys.argv[2] if len(sys.argv) > 2 else ""
 

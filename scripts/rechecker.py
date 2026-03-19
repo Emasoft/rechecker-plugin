@@ -5,6 +5,7 @@ Detects git commit commands, acquires lock, invokes review loop.
 Outputs JSON with additionalContext for the main Claude session.
 """
 
+import atexit
 import json
 import os
 import re
@@ -13,20 +14,21 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 
-def parse_json_field(data, field_path):
+def parse_json_field(data: Any, field_path: str) -> str:
     """Extract a nested field from a dict using dot notation."""
-    val = data
+    val: Any = data
     for key in field_path.split("."):
         if isinstance(val, dict):
             val = val.get(key, "")
         else:
             return ""
-    return val if val else ""
+    return str(val) if val else ""
 
 
-def is_git_commit(command):
+def is_git_commit(command: str) -> bool:
     """Check if the command contains a real git commit (not --amend).
 
     Handles compound commands (&&, ;, |).
@@ -47,7 +49,7 @@ def is_git_commit(command):
     return False
 
 
-def output_hook_json(context_msg):
+def output_hook_json(context_msg: str) -> None:
     """Print the PostToolUse hook JSON response."""
     escaped = json.dumps(context_msg)
     # json.dumps adds quotes, strip them for embedding in the template
@@ -64,7 +66,7 @@ def output_hook_json(context_msg):
     )
 
 
-def main():
+def main() -> None:
     # Read hook input from stdin
     raw = sys.stdin.read()
     try:
@@ -89,12 +91,12 @@ def main():
         sys.exit(0)
 
     # Gate: verify we are in a git repository
-    r = subprocess.run(
+    git_check = subprocess.run(
         ["git", "rev-parse", "--is-inside-work-tree"],
         capture_output=True,
         cwd=project_dir,
     )
-    if r.returncode != 0:
+    if git_check.returncode != 0:
         sys.exit(0)
 
     # Gate: verify claude CLI is available
@@ -128,33 +130,41 @@ def main():
     # Write our PID
     lock_file.write_text(str(os.getpid()))
 
-    def cleanup(*_args):
+    def cleanup() -> None:
         try:
             lock_file.unlink(missing_ok=True)
         except OSError:
             pass
 
-    signal.signal(signal.SIGINT, lambda *a: (cleanup(), sys.exit(130)))
-    signal.signal(signal.SIGTERM, lambda *a: (cleanup(), sys.exit(143)))
-    import atexit
+    def _handle_int(_s: int, _f: object) -> None:
+        cleanup()
+        sys.exit(130)
 
+    def _handle_term(_s: int, _f: object) -> None:
+        cleanup()
+        sys.exit(143)
+
+    signal.signal(signal.SIGINT, _handle_int)
+    signal.signal(signal.SIGTERM, _handle_term)
     atexit.register(cleanup)
 
     # Get commit info
-    r = subprocess.run(
+    head_result = subprocess.run(
         ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=project_dir
     )
-    commit_sha = r.stdout.strip() if r.returncode == 0 else ""
+    commit_sha = head_result.stdout.strip() if head_result.returncode == 0 else ""
     if not commit_sha:
         sys.exit(0)
 
-    r = subprocess.run(
+    branch_result = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
         capture_output=True,
         text=True,
         cwd=project_dir,
     )
-    current_branch = r.stdout.strip() if r.returncode == 0 else "main"
+    current_branch = (
+        branch_result.stdout.strip() if branch_result.returncode == 0 else "main"
+    )
 
     # Prepare reports directory
     reports_dir = Path(project_dir) / "reports_dev"
@@ -170,7 +180,7 @@ def main():
     review_loop_script = Path(plugin_root) / "scripts" / "review-loop.py"
 
     try:
-        r = subprocess.run(
+        loop_run = subprocess.run(
             [
                 sys.executable,
                 str(review_loop_script),
@@ -184,7 +194,9 @@ def main():
             capture_output=True,
             text=True,
         )
-        loop_result = r.stdout.strip() if r.stdout.strip() else "Review completed."
+        loop_result = (
+            loop_run.stdout.strip() if loop_run.stdout.strip() else "Review completed."
+        )
     except Exception:
         loop_result = "Review loop failed or timed out."
 

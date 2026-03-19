@@ -14,28 +14,34 @@ from datetime import datetime
 from pathlib import Path
 
 
-def main():
+def main() -> None:
     commit_sha = sys.argv[1] if len(sys.argv) > 1 else ""
     project_dir = os.getcwd()
 
     # Resolve commit
     if not commit_sha:
-        r = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True)
-        commit_sha = r.stdout.strip() if r.returncode == 0 else ""
+        head_result = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True
+        )
+        commit_sha = head_result.stdout.strip() if head_result.returncode == 0 else ""
 
     if not commit_sha:
         print("ERROR: No commit found. Are you in a git repository?", file=sys.stderr)
         sys.exit(1)
 
-    r = subprocess.run(["git", "cat-file", "-t", commit_sha], capture_output=True)
-    if r.returncode != 0:
+    cat_result = subprocess.run(
+        ["git", "cat-file", "-t", commit_sha], capture_output=True
+    )
+    if cat_result.returncode != 0:
         print(f"ERROR: Commit not found: {commit_sha}", file=sys.stderr)
         sys.exit(1)
 
-    r = subprocess.run(
+    branch_result = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True
     )
-    current_branch = r.stdout.strip() if r.returncode == 0 else "main"
+    current_branch = (
+        branch_result.stdout.strip() if branch_result.returncode == 0 else "main"
+    )
 
     reports_dir = Path(project_dir) / "reports_dev"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -61,14 +67,22 @@ def main():
 
     lock_file.write_text(str(os.getpid()))
 
-    def cleanup(*_args):
+    def cleanup() -> None:
         try:
             lock_file.unlink(missing_ok=True)
         except OSError:
             pass
 
-    signal.signal(signal.SIGINT, lambda *a: (cleanup(), sys.exit(130)))
-    signal.signal(signal.SIGTERM, lambda *a: (cleanup(), sys.exit(143)))
+    def _handle_int(_s: int, _f: object) -> None:
+        cleanup()
+        sys.exit(130)
+
+    def _handle_term(_s: int, _f: object) -> None:
+        cleanup()
+        sys.exit(143)
+
+    signal.signal(signal.SIGINT, _handle_int)
+    signal.signal(signal.SIGTERM, _handle_term)
     atexit.register(cleanup)
 
     # Run the review loop
@@ -76,7 +90,7 @@ def main():
     review_loop_script = Path(plugin_root) / "scripts" / "review-loop.py"
 
     try:
-        r = subprocess.run(
+        loop_run = subprocess.run(
             [
                 sys.executable,
                 str(review_loop_script),
@@ -91,7 +105,9 @@ def main():
             text=True,
         )
         result = (
-            r.stdout.strip() if r.stdout.strip() else "Review loop failed or timed out."
+            loop_run.stdout.strip()
+            if loop_run.stdout.strip()
+            else "Review loop failed or timed out."
         )
     except Exception:
         result = "Review loop failed or timed out."

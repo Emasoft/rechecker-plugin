@@ -22,13 +22,13 @@ from datetime import datetime
 from pathlib import Path
 
 
-def run_git(*args, cwd=None):
+def run_git(*args: str, cwd: str | None = None) -> tuple[str, int]:
     """Run a git command, return (stdout, returncode)."""
     r = subprocess.run(["git"] + list(args), capture_output=True, text=True, cwd=cwd)
     return r.stdout.strip(), r.returncode
 
 
-def cleanup_worktree(wt_name, project_dir):
+def cleanup_worktree(wt_name: str, project_dir: str) -> None:
     """Clean up a Claude-managed worktree and its branch."""
     wt_path = Path(project_dir) / ".claude" / "worktrees" / wt_name
     branch_name = f"worktree-{wt_name}"
@@ -47,7 +47,7 @@ def cleanup_worktree(wt_name, project_dir):
     run_git("branch", "-D", branch_name, cwd=project_dir)
 
 
-def parse_issues_from_report(report_file):
+def parse_issues_from_report(report_file: str) -> tuple[int, int, bool]:
     """Parse ISSUES_FOUND and ISSUES_FIXED from a report file.
 
     Returns (issues_found, issues_fixed, has_marker).
@@ -90,7 +90,7 @@ def parse_issues_from_report(report_file):
     return issues_found, issues_fixed, has_marker
 
 
-def main():
+def main() -> None:
     # Parameters
     project_dir = sys.argv[1]
     commit_sha = sys.argv[2]

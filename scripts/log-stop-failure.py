@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-def main():
+def main() -> None:
     raw = sys.stdin.read()
     try:
         data = json.loads(raw)
