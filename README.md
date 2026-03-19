@@ -1,6 +1,8 @@
-# rechecker-plugin
+# rechecker-plugin v2.0.0
 
 A Claude Code plugin that automatically reviews and fixes code changes after every git commit. It spawns a separate Claude instance in an isolated git worktree, runs automated linters and security scanners, performs a thorough manual code review, fixes all issues found, and loops until the code is clean — or reports what remains.
+
+**v2.0.0**: All scripts rewritten in Python 3 (except scan.sh). Agent model upgraded to Opus 4.6 (1M context). Added `/recheck` slash command for on-demand reviews. Added LLM Externalizer MCP integration for offloading read-only analysis. Full `mypy --strict` type annotations.
 
 ## Why
 
