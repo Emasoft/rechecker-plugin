@@ -7,7 +7,35 @@ on:
     branches: [main]
 
 jobs:
+  mega-linter:
+    name: Mega-Linter
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mega-Linter
+        uses: oxsecurity/megalinter@v8
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATE_ALL_CODEBASE: false
+
+      - name: Upload Mega-Linter reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mega-linter-reports
+          path: |
+            megalinter-reports/
+            mega-linter.log
+
   validate:
+    name: Plugin Validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,17 +49,31 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
-      - name: Lint source files
-        run: uv run ruff check scripts/
-
-      - name: Run plugin validation
+      - name: Validate plugin
         run: |
           if [ -f "scripts/validate_plugin.py" ]; then
             uv run python scripts/validate_plugin.py . --verbose
           fi
 
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
       - name: Run tests
         run: |
-          if [ -d "tests" ]; then
+          if [ -d "tests" ] && ls tests/test_*.py 1>/dev/null 2>&1; then
             uv run pytest tests/ -v
+          else
+            echo "No test files found, skipping"
           fi

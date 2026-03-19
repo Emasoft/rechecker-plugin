@@ -34,10 +34,7 @@ jobs:
             echo "validator=" >> $GITHUB_OUTPUT
           fi
 
-      - name: Lint source files
-        run: uv run ruff check scripts/
-
-      - name: Validate plugin(s)
+      - name: Validate plugin
         if: steps.find-validator.outputs.validator != ''
         run: |
           set +e
@@ -51,7 +48,3 @@ jobs:
             echo "Validation failed (exit code: $exit_code)"
             exit $exit_code
           fi
-
-      - name: Lint Python files
-        run: |
-          uv run ruff check scripts/ --select=E,F,W --ignore=E501 || echo "Lint issues found (non-blocking)"
