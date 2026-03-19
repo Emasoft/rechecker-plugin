@@ -113,6 +113,15 @@ Brief overview of findings (1-2 sentences).
 - **TruffleHog**: N secrets detected
 - **Remaining unfixed scan findings**: (list any that couldn't be auto-fixed)
 
+## Checklist Failures
+(Only include this section if any checklist item could not be completed.
+ For each failed item, document: the error, justification, and impact.)
+
+### Item N: [Item name]
+- **Error**: exact error message or output
+- **Justification**: why this item cannot be completed
+- **Impact**: what was skipped and whether it affects review reliability
+
 ## Files Reviewed
 - path/to/file1.ext
 - path/to/file2.ext
@@ -228,4 +237,10 @@ ISSUES_FIXED: 0
       - All checklist items above are DONE
 ```
 
-**EXIT RULE**: Do NOT exit or stop until every checklist item is marked DONE. If an item fails (e.g., scan fails, commit fails, file not found), either retry it or explicitly note the failure reason and mark it as DONE with the failure noted. The checklist is your contract - incomplete execution is not acceptable.
+**EXIT RULE**: Do NOT exit or stop until every checklist item is marked DONE. If an item fails (e.g., scan fails, commit fails, file not found), you MUST retry it at least once. If it still fails after retry, you may mark it as DONE only if you:
+1. Document the failure in the report under a **## Checklist Failures** section
+2. Include the exact error message or output that caused the failure
+3. Provide a valid justification for why the item cannot be completed (e.g., "Docker not available on this system", "commit SHA has no parent - first commit in repo")
+4. Explain the impact: what was skipped and whether it affects the reliability of the review
+
+A checklist item marked DONE without either successful completion OR a documented justification in the report is a violation. The report is the permanent record - if a step was skipped, the report must say why.
