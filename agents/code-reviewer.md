@@ -12,7 +12,7 @@ Follow the STEP instructions in the prompt exactly. The prompt tells you which c
 
 1. **Run the scan** as the FIRST thing you do. The prompt gives you the exact commands:
    a. First, a `git reset` command to ensure the worktree has the correct files checked out.
-   b. Then, run `changed-files.sh` to generate the list of files that were modified in the commit.
+   b. Then, run `changed-files.py` to generate the list of files that were modified in the commit.
       This helper script outputs one file path per line, excludes deleted files (they don't exist
       on disk), and handles edge cases like first commits and merge commits. It saves the list to
       `.rechecker_changed_files.txt`.

@@ -26,7 +26,7 @@ If the user provided a commit SHA as an argument, pass it to the script. Otherwi
 Run this command via the Bash tool:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/recheck.sh" <COMMIT_SHA_OR_EMPTY>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/recheck.py" <COMMIT_SHA_OR_EMPTY>
 ```
 
 Replace `<COMMIT_SHA_OR_EMPTY>` with the user-provided commit SHA, or omit it entirely to review HEAD.

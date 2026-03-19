@@ -65,7 +65,7 @@ Inject summary into main Claude's context
 | **StopFailure logging** | Logs API errors (rate limits, server errors) to `reports_dev/rechecker_api_errors.log` |
 | **Lock file** | PID-based lock prevents concurrent review cycles |
 | **On-demand review** | `/recheck` slash command triggers the same review loop manually on any commit |
-| **Cross-platform** | Bash 3.2+ (macOS), Bash 4/5 (Linux), WSL compatible |
+| **Cross-platform** | Python 3.6+ on macOS, Linux, WSL (scan.sh requires Bash) |
 
 ## Plugin Structure
 
@@ -81,12 +81,12 @@ rechecker-plugin/
 |   +-- recheck/
 |       +-- SKILL.md             # /recheck slash command: on-demand review trigger
 +-- scripts/
-|   +-- rechecker.sh             # Entry point: commit detection, locking, JSON I/O
-|   +-- recheck.sh               # On-demand entry point for /recheck skill
-|   +-- review-loop.sh           # Core loop: worktree, scan, review, merge, retry
-|   +-- changed-files.sh         # Generates list of changed files from git commit
+|   +-- rechecker.py             # Entry point: commit detection, locking, JSON I/O
+|   +-- recheck.py               # On-demand entry point for /recheck skill
+|   +-- review-loop.py           # Core loop: worktree, scan, review, merge, retry
+|   +-- changed-files.py         # Generates list of changed files from git commit
 |   +-- scan.sh                  # Runs Super-Linter + Semgrep + TruffleHog via Docker
-|   +-- log-stop-failure.sh      # StopFailure hook: logs API errors
+|   +-- log-stop-failure.py      # StopFailure hook: logs API errors
 +-- .gitignore
 +-- README.md
 ```
@@ -95,11 +95,11 @@ rechecker-plugin/
 
 | Script | Purpose | Input | Output |
 |--------|---------|-------|--------|
-| `rechecker.sh` | Hook entry point. Reads PostToolUse JSON from stdin, detects `git commit`, acquires lock, invokes `review-loop.sh` | JSON on stdin | JSON on stdout (`additionalContext`) |
-| `review-loop.sh` | Core review loop. Creates worktrees, runs scan + review agent, merges fixes, iterates until clean | 6 positional args (project dir, commit SHA, branch, reports dir, timestamp, plugin root) | Summary text on stdout |
-| `changed-files.sh` | Generates list of files changed in a commit. Handles first commits, merge commits, excludes deleted files | `<commit_sha> [output_file]` | File paths (one per line) to stdout or file |
+| `rechecker.py` | Hook entry point. Reads PostToolUse JSON from stdin, detects `git commit`, acquires lock, invokes `review-loop.py` | JSON on stdin | JSON on stdout (`additionalContext`) |
+| `review-loop.py` | Core review loop. Creates worktrees, runs scan + review agent, merges fixes, iterates until clean | 6 positional args (project dir, commit SHA, branch, reports dir, timestamp, plugin root) | Summary text on stdout |
+| `changed-files.py` | Generates list of files changed in a commit. Handles first commits, merge commits, excludes deleted files | `<commit_sha> [output_file]` | File paths (one per line) to stdout or file |
 | `scan.sh` | Runs Super-Linter, Semgrep, TruffleHog via Docker. Auto-installs Docker if needed. Supports `--target-list` for targeted scanning | CLI flags + project dir | JSON report path on stdout |
-| `log-stop-failure.sh` | Logs StopFailure events (rate limits, server errors) for debugging | JSON on stdin | Appends to `rechecker_api_errors.log` |
+| `log-stop-failure.py` | Logs StopFailure events (rate limits, server errors) for debugging | JSON on stdin | Appends to `rechecker_api_errors.log` |
 
 ## Agent: code-reviewer
 
@@ -178,13 +178,13 @@ The plugin works out of the box with no configuration. Key defaults:
 
 | Setting | Default | Where |
 |---------|---------|-------|
-| Max passes | 30 | `review-loop.sh` (`MAX_PASSES`) |
-| Scan timeout | 3 hours | `review-loop.sh` (prompt `--scan-timeout`) |
+| Max passes | 30 | `review-loop.py` (`MAX_PASSES`) |
+| Scan timeout | 3 hours | `review-loop.py` (prompt `--scan-timeout`) |
 | Hook timeout | 24 hours | `hooks/hooks.json` |
-| Retry count | 3 | `review-loop.sh` (`MAX_RETRIES`) |
-| Retry delay | 30s base | `review-loop.sh` (`RETRY_DELAY`) |
+| Retry count | 3 | `review-loop.py` (`MAX_RETRIES`) |
+| Retry delay | 30s base | `review-loop.py` (`RETRY_DELAY`) |
 | Agent model | opus[1m] | `agents/code-reviewer.md` frontmatter |
-| Permission mode | bypass all | `review-loop.sh` (`--dangerously-skip-permissions`) |
+| Permission mode | bypass all | `review-loop.py` (`--dangerously-skip-permissions`) |
 
 ### Gitignore
 
@@ -200,7 +200,7 @@ reports_dev/
 | Requirement | Why |
 |-------------|-----|
 | `claude` CLI on PATH | Runs the review agent in headless mode |
-| `python3` on PATH | JSON parsing in hook scripts |
+| `python3` on PATH | All scripts are Python 3 (except scan.sh) |
 | `git` repository | Worktrees, diffs, commits |
 | Docker (optional) | Required for scan.sh (Super-Linter, Semgrep, TruffleHog) |
 | Max subscription | `claude --worktree` uses your Max subscription auth |
@@ -209,11 +209,10 @@ reports_dev/
 
 | Platform | Status | Notes |
 |----------|--------|-------|
-| macOS (Bash 3.2) | Supported | `set -o pipefail` wrapped in fallback |
-| macOS (Bash 5 via Homebrew) | Supported | Full feature set |
-| Linux (Bash 4+) | Supported | Full feature set |
+| macOS | Supported | Python 3.6+ required (pre-installed) |
+| Linux | Supported | Python 3.6+ required |
 | WSL | Supported | Docker may need extra setup |
-| Windows (Git Bash) | Untested | Should work if Docker available |
+| Windows | Untested | Python 3.6+ required, scan.sh needs Git Bash |
 
 ## Safety
 

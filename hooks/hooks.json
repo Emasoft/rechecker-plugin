@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/rechecker.sh",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/rechecker.py",
             "timeout": 86400
           }
         ]
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/log-stop-failure.sh"
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/log-stop-failure.py"
           }
         ]
       }
