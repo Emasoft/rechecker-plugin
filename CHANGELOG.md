@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 ### Miscellaneous Tasks
 
 - Update uv.lock, remove stray scan report
+
 ## [2.0.11] - 2026-03-20
 
 ### Bug Fixes
@@ -27,6 +28,7 @@ All notable changes to this project will be documented in this file.
 
 - Update uv.lock
 - Bump version to 2.0.11
+
 ## [2.0.10] - 2026-03-20
 
 ### Miscellaneous Tasks
