@@ -7,7 +7,7 @@ def safe_divide(a: int, b: int) -> float:
     return a / b
 
 
-def parse_config(raw: str) -> dict:
+def parse_config(raw: str) -> dict[str, str]:
     """Parse a KEY=VALUE config string into a dict."""
     result = {}
     for line in raw.split("\n"):

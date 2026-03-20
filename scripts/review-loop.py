@@ -189,6 +189,8 @@ def main() -> None:
         reset_command = f"git reset --hard {pass_target_sha}"
         # Quote paths for spaces in plugin install directory
         changed_files_gen = f'python3 "{changed_files_script}" {pass_target_sha} .rechecker_changed_files.txt'
+        # Only skip Docker image pulls on pass 2+ (pass 1 needs to pull if images aren't cached)
+        skip_pull_flag = " --skip-pull" if pass_num > 1 else ""
 
         # Build prompt conditionally: include scan step only when not skipped
         if skip_scan:
@@ -232,13 +234,14 @@ STEP 1: Run the automated linter and security scan with autofix.
 
     {changed_files_gen}
     mkdir -p .rechecker_scan_output
-    bash "{scan_script}" --autofix --target-list .rechecker_changed_files.txt --scan-timeout 10800 --skip-pull -o .rechecker_scan_output .
+    bash "{scan_script}" --autofix --target-list .rechecker_changed_files.txt --scan-timeout 10800{skip_pull_flag} -o .rechecker_scan_output .
 
   The changed-files.py helper generates a clean list (one path per line, excludes
   deleted files, handles first commits and merge commits). The --target-list flag
   tells scan.sh to scan only those files instead of the entire codebase.
   --scan-timeout 10800 allows up to 3 hours total for the scan.
-  --skip-pull uses cached Docker images (avoids re-pulling on every pass).
+  On pass 1, Docker images are pulled if not cached. On pass 2+, --skip-pull
+  uses cached images (avoids re-pulling on every pass).
 
   IMPORTANT: Do NOT run scan.sh without --target-list, as that would scan the
   entire codebase and autofix unrelated files.
