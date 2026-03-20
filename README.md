@@ -249,11 +249,11 @@ The plugin works out of the box with no configuration. Key defaults:
 
 | Setting | Default | Where |
 |---------|---------|-------|
-| Max passes | 30 | `review-loop.py` (`MAX_PASSES`) |
+| Max passes | 30 | `review-loop.py` (`max_passes`) |
 | Scan timeout | 3 hours | `review-loop.py` (prompt `--scan-timeout`) |
 | Hook timeout | 24 hours | `hooks/hooks.json` |
-| Retry count | 3 | `review-loop.py` (`MAX_RETRIES`) |
-| Retry delay | 30s base | `review-loop.py` (`RETRY_DELAY`) |
+| Retry count | 3 | `review-loop.py` (`max_retries`) |
+| Retry delay | 30s base | `review-loop.py` (`retry_delay`) |
 | Agent model | opus[1m] | `agents/code-reviewer.md` frontmatter |
 | Permission mode | bypass all | `review-loop.py` (`--dangerously-skip-permissions`) |
 

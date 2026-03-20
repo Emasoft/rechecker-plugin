@@ -32,6 +32,11 @@ def main() -> None:
         print(f"ERROR: Commit not found: {commit_sha}", file=sys.stderr)
         sys.exit(1)
 
+    # Verify claude CLI is available
+    if not any((Path(d) / "claude").exists() for d in os.environ.get("PATH", "").split(os.pathsep) if d):
+        print("ERROR: 'claude' CLI not found on PATH. Cannot run automated review.", file=sys.stderr)
+        sys.exit(1)
+
     branch_result = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True)
     current_branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "main"
 
