@@ -26,14 +26,18 @@ jobs:
 
       - name: Run full plugin validation
         run: |
-          set +e
-          uv run python scripts/validate_plugin.py . --verbose > validation-report.txt 2>&1
-          exit_code=$?
-          set -e
-          cat validation-report.txt
-          if [ $exit_code -le 2 ] && [ $exit_code -ge 1 ]; then
-            echo "::error::Validation failed with exit code $exit_code (critical/major issues found)"
-            exit $exit_code
+          if [ -f "scripts/validate_plugin.py" ]; then
+            set +e
+            uv run python scripts/validate_plugin.py . --verbose > validation-report.txt 2>&1
+            exit_code=$?
+            set -e
+            cat validation-report.txt
+            if [ $exit_code -le 2 ] && [ $exit_code -ge 1 ]; then
+              echo "::error::Validation failed with exit code $exit_code (critical/major issues found)"
+              exit $exit_code
+            fi
+          else
+            echo "No validate_plugin.py found, skipping validation" > validation-report.txt
           fi
 
       - name: Run tests

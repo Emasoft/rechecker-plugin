@@ -97,7 +97,7 @@ def main() -> None:
             text=True,
         )
         phase1_result = phase1.stdout.strip() if phase1.stdout.strip() else "Code review completed."
-        phase1_clean = "Review completed (clean)" in phase1_result
+        phase1_clean = phase1.returncode == 0
     except Exception:
         phase1_result = "Code review loop failed or timed out."
         phase1_clean = False
@@ -122,6 +122,8 @@ def main() -> None:
                     plugin_root,
                     func_reviewer_agent,
                     "--skip-scan",
+                    "--original-commit",
+                    commit_sha,
                 ],
                 capture_output=True,
                 text=True,

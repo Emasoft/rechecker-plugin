@@ -85,7 +85,7 @@ Inject summary into main Claude's context
 | **StopFailure logging** | Logs API errors (rate limits, server errors) to `reports_dev/rechecker_api_errors.log` |
 | **Lock file** | PID-based lock prevents concurrent review cycles |
 | **On-demand review** | `/recheck` slash command triggers the same review loop manually on any commit |
-| **Cross-platform** | Python 3.6+ on macOS, Linux, WSL (scan.sh requires Bash) |
+| **Cross-platform** | Python 3.12+ on macOS, Linux, WSL (scan.sh requires Bash) |
 
 ## Plugin Structure
 
@@ -117,7 +117,7 @@ rechecker-plugin/
 | Script | Purpose | Input | Output |
 |--------|---------|-------|--------|
 | `rechecker.py` | Hook entry point. Reads PostToolUse JSON from stdin, detects `git commit`, acquires lock, invokes `review-loop.py` | JSON on stdin | JSON on stdout (`additionalContext`) |
-| `review-loop.py` | Core review loop. Creates worktrees, runs scan + review agent, merges fixes, iterates until clean | 6 positional args (project dir, commit SHA, branch, reports dir, timestamp, plugin root) | Summary text on stdout |
+| `review-loop.py` | Core review loop. Creates worktrees, runs scan + review agent, merges fixes, iterates until clean. Exit 0 = clean, 1 = issues remain | 6 positional args + optional: agent file, `--skip-scan`, `--original-commit <sha>` | Summary text on stdout |
 | `changed-files.py` | Generates list of files changed in a commit. Handles first commits, merge commits, excludes deleted files | `<commit_sha> [output_file]` | File paths (one per line) to stdout or file |
 | `scan.sh` | Runs Super-Linter, Semgrep, TruffleHog via Docker. Auto-installs Docker if needed. Supports `--target-list` for targeted scanning | CLI flags + project dir | JSON report path on stdout |
 | `log-stop-failure.py` | Logs StopFailure events (rate limits, server errors) for debugging | JSON on stdin | Appends to `rechecker_api_errors.log` |
@@ -268,7 +268,7 @@ reports_dev/
 | Requirement | Why |
 |-------------|-----|
 | `claude` CLI on PATH | Runs the review agent in headless mode |
-| `python3` on PATH | All scripts are Python 3 (except scan.sh) |
+| `python3` (3.12+) on PATH | All scripts are Python 3.12+ (except scan.sh) |
 | `git` repository | Worktrees, diffs, commits |
 | Docker (optional) | Required for scan.sh (Super-Linter, Semgrep, TruffleHog) |
 | Max subscription | `claude --worktree` uses your Max subscription auth |
@@ -277,10 +277,10 @@ reports_dev/
 
 | Platform | Status | Notes |
 |----------|--------|-------|
-| macOS | Supported | Python 3.6+ required (pre-installed) |
-| Linux | Supported | Python 3.6+ required |
+| macOS | Supported | Python 3.12+ required |
+| Linux | Supported | Python 3.12+ required |
 | WSL | Supported | Docker may need extra setup |
-| Windows | Untested | Python 3.6+ required, scan.sh needs Git Bash |
+| Windows | Untested | Python 3.12+ required, scan.sh needs Git Bash |
 
 ## Safety
 

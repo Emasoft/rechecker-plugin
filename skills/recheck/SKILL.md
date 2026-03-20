@@ -57,7 +57,8 @@ Trigger the rechecker review loop manually on the latest commit (or a specified 
 
 ## Resources
 
-- Agent definition: `agents/code-reviewer.md`
+- Phase 1 agent: `agents/code-reviewer.md`
+- Phase 2 agent: `agents/functionality-reviewer.md`
 - Hook entry point: `scripts/rechecker.py`
 - Core review loop: `scripts/review-loop.py`
 - Security scanner: `scripts/scan.sh`

@@ -17,6 +17,7 @@ Handles:
 
 import subprocess
 import sys
+from pathlib import Path
 
 
 def run_git(*args: str) -> tuple[str, int]:
@@ -59,7 +60,7 @@ def main() -> None:
     if not result:
         # No changed files - not an error, just nothing to scan
         if output_file:
-            open(output_file, "w").close()
+            Path(output_file).touch()
         sys.exit(0)
 
     # Output

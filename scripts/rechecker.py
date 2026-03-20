@@ -51,15 +51,13 @@ def is_git_commit(command: str) -> bool:
 
 def output_hook_json(context_msg: str) -> None:
     """Print the PostToolUse hook JSON response."""
-    escaped = json.dumps(context_msg)
-    # json.dumps adds quotes, strip them for embedding in the template
-    escaped_inner = escaped[1:-1]
+    # Let json.dumps handle all escaping in a single pass
     print(
         json.dumps(
             {
                 "hookSpecificOutput": {
                     "hookEventName": "PostToolUse",
-                    "additionalContext": f"[Rechecker] {escaped_inner}",
+                    "additionalContext": f"[Rechecker] {context_msg}",
                 }
             }
         )
@@ -189,7 +187,7 @@ def main() -> None:
             text=True,
         )
         phase1_result = phase1.stdout.strip() if phase1.stdout.strip() else "Code review completed."
-        phase1_clean = "Review completed (clean)" in phase1_result
+        phase1_clean = phase1.returncode == 0
     except Exception:
         phase1_result = "Code review loop failed or timed out."
         phase1_clean = False
@@ -215,6 +213,8 @@ def main() -> None:
                     plugin_root,
                     func_reviewer_agent,
                     "--skip-scan",
+                    "--original-commit",
+                    commit_sha,
                 ],
                 capture_output=True,
                 text=True,

@@ -104,6 +104,15 @@ Brief overview of findings (1-2 sentences).
 
 ### Issue 2: ...
 
+## Checklist Failures
+(Only include this section if any checklist item could not be completed.
+ For each failed item, document: the error, justification, and impact.)
+
+### Item N: [Item name]
+- **Error**: exact error message or output
+- **Justification**: why this item cannot be completed
+- **Impact**: what was skipped and whether it affects review reliability
+
 ## Files Reviewed
 - path/to/file1.ext
 - path/to/file2.ext

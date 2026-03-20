@@ -99,10 +99,23 @@ def main() -> None:
     timestamp = sys.argv[5]
     plugin_root = sys.argv[6]
 
-    # Optional 7th arg: agent file path (default: code-reviewer.md)
-    agent_file = sys.argv[7] if len(sys.argv) > 7 else str(Path(plugin_root) / "agents" / "code-reviewer.md")
-    # Optional flag: --skip-scan (skip the scan.sh step, used by functionality-reviewer)
-    skip_scan = "--skip-scan" in sys.argv[7:]
+    # Parse optional args (7+): agent file path and flags
+    agent_file = str(Path(plugin_root) / "agents" / "code-reviewer.md")
+    skip_scan = False
+    original_commit = ""
+    extra_args = sys.argv[7:]
+    i = 0
+    while i < len(extra_args):
+        arg = extra_args[i]
+        if arg == "--skip-scan":
+            skip_scan = True
+        elif arg == "--original-commit" and i + 1 < len(extra_args):
+            # Original trigger commit SHA (used by Phase 2 for correct diff base)
+            original_commit = extra_args[i + 1]
+            i += 1
+        elif not arg.startswith("--"):
+            agent_file = arg
+        i += 1
 
     max_passes = 30
     scan_script = str(Path(plugin_root) / "scripts" / "scan.sh")
@@ -157,9 +170,11 @@ def main() -> None:
         # Build the prompt
         # Detect first commit (no parent) to avoid "bad revision SHA~1" error
         if pass_num == 1:
-            _, rc = run_git("rev-parse", f"{commit_sha}~1", cwd=project_dir)
+            # Use original commit as diff base when provided (Phase 2 after Phase 1 fixes)
+            diff_base_sha = original_commit if original_commit else commit_sha
+            _, rc = run_git("rev-parse", f"{diff_base_sha}~1", cwd=project_dir)
             if rc == 0:
-                diff_command = f"git diff {commit_sha}~1..{commit_sha}"
+                diff_command = f"git diff {diff_base_sha}~1..{commit_sha}"
             else:
                 diff_command = f"git show --format='' {commit_sha}"
         else:
@@ -507,6 +522,9 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
             f"Review completed ({final_status}). {total_issues_found} issues found, "
             f"{total_issues_fixed} fixed. {report_instruction}"
         )
+
+    # Exit 0 = clean (no issues remain), 1 = issues remain or error
+    sys.exit(0 if final_status == "clean" else 1)
 
 
 if __name__ == "__main__":
