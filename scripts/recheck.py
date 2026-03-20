@@ -20,34 +20,24 @@ def main() -> None:
 
     # Resolve commit
     if not commit_sha:
-        head_result = subprocess.run(
-            ["git", "rev-parse", "HEAD"], capture_output=True, text=True
-        )
+        head_result = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True)
         commit_sha = head_result.stdout.strip() if head_result.returncode == 0 else ""
 
     if not commit_sha:
         print("ERROR: No commit found. Are you in a git repository?", file=sys.stderr)
         sys.exit(1)
 
-    cat_result = subprocess.run(
-        ["git", "cat-file", "-t", commit_sha], capture_output=True
-    )
+    cat_result = subprocess.run(["git", "cat-file", "-t", commit_sha], capture_output=True)
     if cat_result.returncode != 0:
         print(f"ERROR: Commit not found: {commit_sha}", file=sys.stderr)
         sys.exit(1)
 
-    branch_result = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True
-    )
-    current_branch = (
-        branch_result.stdout.strip() if branch_result.returncode == 0 else "main"
-    )
+    branch_result = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True)
+    current_branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "main"
 
     reports_dir = Path(project_dir) / "reports_dev"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    plugin_root = os.environ.get(
-        "CLAUDE_PLUGIN_ROOT", str(Path(__file__).resolve().parent.parent)
-    )
+    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", str(Path(__file__).resolve().parent.parent))
 
     # Acquire lock
     lock_dir = Path(project_dir) / ".rechecker"
@@ -58,9 +48,7 @@ def main() -> None:
         try:
             lock_pid = int(lock_file.read_text().strip())
             os.kill(lock_pid, 0)
-            print(
-                f"Another review cycle is already in progress (PID: {lock_pid}). Skipping."
-            )
+            print(f"Another review cycle is already in progress (PID: {lock_pid}). Skipping.")
             sys.exit(0)
         except (ValueError, ProcessLookupError, PermissionError, OSError):
             lock_file.unlink(missing_ok=True)
@@ -104,11 +92,7 @@ def main() -> None:
             capture_output=True,
             text=True,
         )
-        result = (
-            loop_run.stdout.strip()
-            if loop_run.stdout.strip()
-            else "Review loop failed or timed out."
-        )
+        result = loop_run.stdout.strip() if loop_run.stdout.strip() else "Review loop failed or timed out."
     except Exception:
         result = "Review loop failed or timed out."
 

@@ -100,14 +100,8 @@ def main() -> None:
         sys.exit(0)
 
     # Gate: verify claude CLI is available
-    if not any(
-        (Path(d) / "claude").exists()
-        for d in os.environ.get("PATH", "").split(os.pathsep)
-        if d
-    ):
-        output_hook_json(
-            "ERROR: 'claude' CLI not found on PATH. Cannot run automated review."
-        )
+    if not any((Path(d) / "claude").exists() for d in os.environ.get("PATH", "").split(os.pathsep) if d):
+        output_hook_json("ERROR: 'claude' CLI not found on PATH. Cannot run automated review.")
         sys.exit(0)
 
     # Acquire lock
@@ -149,9 +143,7 @@ def main() -> None:
     atexit.register(cleanup)
 
     # Get commit info
-    head_result = subprocess.run(
-        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=project_dir
-    )
+    head_result = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=project_dir)
     commit_sha = head_result.stdout.strip() if head_result.returncode == 0 else ""
     if not commit_sha:
         sys.exit(0)
@@ -162,18 +154,14 @@ def main() -> None:
         text=True,
         cwd=project_dir,
     )
-    current_branch = (
-        branch_result.stdout.strip() if branch_result.returncode == 0 else "main"
-    )
+    current_branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "main"
 
     # Prepare reports directory
     reports_dir = Path(project_dir) / "reports_dev"
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     # Resolve plugin root
-    plugin_root = os.environ.get(
-        "CLAUDE_PLUGIN_ROOT", str(Path(__file__).resolve().parent.parent)
-    )
+    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", str(Path(__file__).resolve().parent.parent))
 
     # Run the review loop
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -194,9 +182,7 @@ def main() -> None:
             capture_output=True,
             text=True,
         )
-        loop_result = (
-            loop_run.stdout.strip() if loop_run.stdout.strip() else "Review completed."
-        )
+        loop_result = loop_run.stdout.strip() if loop_run.stdout.strip() else "Review completed."
     except Exception:
         loop_result = "Review loop failed or timed out."
 

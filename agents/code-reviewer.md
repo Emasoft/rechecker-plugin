@@ -177,7 +177,7 @@ ISSUES_FIXED: 0
       - Verified files match the target commit (check with: git log --oneline -1)
 
 [ ] 2. CHANGED FILES LIST GENERATED
-      - Ran changed-files.sh with the commit SHA
+      - Ran changed-files.py with the commit SHA
       - Output file .rechecker_changed_files.txt exists
       - File is not empty (has at least 1 line)
       - If empty: no files to review, write report with ISSUES_FOUND: 0 and exit

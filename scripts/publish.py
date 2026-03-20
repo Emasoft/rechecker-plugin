@@ -31,44 +31,52 @@ from pathlib import Path
 
 # -- ANSI colors ---------------------------------------------------------------
 
+
 def _colors_ok() -> bool:
     if os.environ.get("NO_COLOR"):
         return False
     return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
 
+
 _C = _colors_ok()
-RED    = "\033[0;31m" if _C else ""
-GREEN  = "\033[0;32m" if _C else ""
+RED = "\033[0;31m" if _C else ""
+GREEN = "\033[0;32m" if _C else ""
 YELLOW = "\033[1;33m" if _C else ""
-BLUE   = "\033[0;34m" if _C else ""
-BOLD   = "\033[1m" if _C else ""
-NC     = "\033[0m" if _C else ""
+BLUE = "\033[0;34m" if _C else ""
+BOLD = "\033[1m" if _C else ""
+NC = "\033[0m" if _C else ""
 
 
 # -- Helpers -------------------------------------------------------------------
 
+
 def cprint(msg: str) -> None:
     print(msg, flush=True)
 
+
 def run(
-    cmd: list[str], cwd: Path | None = None, *, check: bool = True, capture: bool = False,
+    cmd: list[str],
+    cwd: Path | None = None,
+    *,
+    check: bool = True,
+    capture: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Run a command, stream output, fail-fast on error."""
     cprint(f"  {BLUE}$ {' '.join(cmd)}{NC}")
-    result = subprocess.run(cmd, cwd=str(cwd) if cwd else None, text=True,
-                            capture_output=capture, timeout=300)
+    result = subprocess.run(cmd, cwd=str(cwd) if cwd else None, text=True, capture_output=capture, timeout=300)
     if check and result.returncode != 0:
         cprint(f"  {RED}Command failed (exit {result.returncode}){NC}")
         sys.exit(result.returncode)
     return result
 
+
 def get_repo_root() -> Path:
-    r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
-                       capture_output=True, text=True, check=True)
+    r = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True)
     return Path(r.stdout.strip())
 
 
 # -- Semver --------------------------------------------------------------------
+
 
 def parse_semver(version: str) -> tuple[int, int, int] | None:
     """Parse 'X.Y.Z' into (major, minor, patch)."""
@@ -76,6 +84,7 @@ def parse_semver(version: str) -> tuple[int, int, int] | None:
     if not m:
         return None
     return int(m.group(1)), int(m.group(2)), int(m.group(3))
+
 
 def bump_semver(current: str, bump_type: str) -> str | None:
     """Bump version by major/minor/patch. Returns new version string or None."""
@@ -94,6 +103,7 @@ def bump_semver(current: str, bump_type: str) -> str | None:
 
 # -- Version readers/writers ---------------------------------------------------
 
+
 def get_current_version(plugin_root: Path) -> str | None:
     """Read version from .claude-plugin/plugin.json."""
     pj = plugin_root / ".claude-plugin" / "plugin.json"
@@ -104,6 +114,7 @@ def get_current_version(plugin_root: Path) -> str | None:
         return data.get("version")
     except (json.JSONDecodeError, OSError):
         return None
+
 
 def update_plugin_json(root: Path, new_ver: str) -> tuple[bool, str]:
     """Write version to .claude-plugin/plugin.json."""
@@ -118,6 +129,7 @@ def update_plugin_json(root: Path, new_ver: str) -> tuple[bool, str]:
     except (json.JSONDecodeError, OSError) as e:
         return False, f"plugin.json update failed: {e}"
 
+
 def update_pyproject_toml(root: Path, new_ver: str) -> tuple[bool, str]:
     """Write version to pyproject.toml."""
     pp = root / "pyproject.toml"
@@ -127,7 +139,7 @@ def update_pyproject_toml(root: Path, new_ver: str) -> tuple[bool, str]:
         content = pp.read_text(encoding="utf-8")
         updated = re.sub(
             r'^(version\s*=\s*")[^"]*(")',
-            rf'\g<1>{new_ver}\2',
+            rf"\g<1>{new_ver}\2",
             content,
             count=1,
             flags=re.MULTILINE,
@@ -138,6 +150,7 @@ def update_pyproject_toml(root: Path, new_ver: str) -> tuple[bool, str]:
         return True, f"pyproject.toml -> {new_ver}"
     except OSError as e:
         return False, f"pyproject.toml update failed: {e}"
+
 
 def update_python_versions(root: Path, new_ver: str) -> list[tuple[bool, str]]:
     """Update __version__ = '...' in all .py files under scripts/."""
@@ -158,6 +171,7 @@ def update_python_versions(root: Path, new_ver: str) -> list[tuple[bool, str]]:
             py_file.write_text(updated, encoding="utf-8")
             results.append((True, f"{py_file.relative_to(root)} -> {new_ver}"))
     return results
+
 
 def check_version_consistency(root: Path) -> tuple[bool, str]:
     """Verify all version sources match."""
@@ -186,6 +200,7 @@ def check_version_consistency(root: Path) -> tuple[bool, str]:
     details = ", ".join(f"{k}={v}" for k, v in found.items())
     return False, f"Version mismatch: {details}"
 
+
 def do_bump(root: Path, new_ver: str, dry_run: bool = False) -> bool:
     """Orchestrate all version updates."""
     cprint(f"\n{BOLD}Bumping to {new_ver}{' (dry-run)' if dry_run else ''}{NC}")
@@ -211,6 +226,7 @@ def do_bump(root: Path, new_ver: str, dry_run: bool = False) -> bool:
 
 # -- Pipeline stages -----------------------------------------------------------
 
+
 def stage_check_clean(root: Path) -> None:
     """Step 1: Working tree must be clean."""
     cprint(f"\n{BOLD}[1/9] Checking working tree...{NC}")
@@ -220,6 +236,7 @@ def stage_check_clean(root: Path) -> None:
         cprint(r.stdout)
         sys.exit(1)
     cprint(f"  {GREEN}Clean.{NC}")
+
 
 def stage_tests(root: Path) -> None:
     """Step 2: Run pytest."""
@@ -231,11 +248,13 @@ def stage_tests(root: Path) -> None:
     run(["uv", "run", "pytest", "tests/", "-x", "-q", "--tb=short"], cwd=root)
     cprint(f"  {GREEN}Tests passed.{NC}")
 
+
 def stage_lint(root: Path) -> None:
     """Step 3: Lint with ruff."""
     cprint(f"\n{BOLD}[3/9] Linting...{NC}")
     run(["uv", "run", "ruff", "check", "scripts/"], cwd=root)
     cprint(f"  {GREEN}Lint passed.{NC}")
+
 
 def stage_validate(root: Path) -> None:
     """Step 4: Validate plugin structure."""
@@ -247,6 +266,7 @@ def stage_validate(root: Path) -> None:
     run(["uv", "run", "python", str(validator), ".", "--strict"], cwd=root)
     cprint(f"  {GREEN}Validation passed.{NC}")
 
+
 def stage_consistency(root: Path) -> None:
     """Step 5: Check version consistency."""
     cprint(f"\n{BOLD}[5/9] Checking version consistency...{NC}")
@@ -257,6 +277,7 @@ def stage_consistency(root: Path) -> None:
         sys.exit(1)
     cprint(f"  {GREEN}Consistent.{NC}")
 
+
 def stage_bump(root: Path, new_ver: str, dry_run: bool) -> None:
     """Step 6: Bump version."""
     cprint(f"\n{BOLD}[6/9] Bumping version...{NC}")
@@ -264,6 +285,7 @@ def stage_bump(root: Path, new_ver: str, dry_run: bool) -> None:
         cprint(f"  {RED}Version bump failed.{NC}")
         sys.exit(1)
     cprint(f"  {GREEN}Version bumped to {new_ver}.{NC}")
+
 
 def stage_changelog(root: Path, dry_run: bool) -> None:
     """Step 7: Generate changelog with git-cliff."""
@@ -281,6 +303,7 @@ def stage_changelog(root: Path, dry_run: bool) -> None:
     run(["git-cliff", "-o", "CHANGELOG.md"], cwd=root)
     cprint(f"  {GREEN}Changelog generated.{NC}")
 
+
 def stage_commit_and_push(root: Path, new_ver: str, dry_run: bool) -> None:
     """Step 8: Commit, tag, push."""
     cprint(f"\n{BOLD}[8/9] Committing and pushing...{NC}")
@@ -295,6 +318,7 @@ def stage_commit_and_push(root: Path, new_ver: str, dry_run: bool) -> None:
     run(["git", "tag", "-a", tag, "-m", f"Release {tag}"], cwd=root)
     run(["git", "push", "origin", "HEAD", "--tags"], cwd=root)
     cprint(f"  {GREEN}Pushed {tag}.{NC}")
+
 
 def stage_gh_release(root: Path, new_ver: str, dry_run: bool) -> None:
     """Step 9: Create GitHub release via gh CLI."""
@@ -315,6 +339,7 @@ def stage_gh_release(root: Path, new_ver: str, dry_run: bool) -> None:
 
 
 # -- Main ----------------------------------------------------------------------
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(

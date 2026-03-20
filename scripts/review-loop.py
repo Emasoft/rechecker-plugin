@@ -131,13 +131,9 @@ def main() -> None:
             # First pass: review the triggering commit
             out, rc = run_git("log", "-1", "--format=%s", commit_sha, cwd=project_dir)
             commit_msg = out if rc == 0 else "Unknown"
-            diff_stat, rc = run_git(
-                "diff", "--stat", f"{commit_sha}~1..{commit_sha}", cwd=project_dir
-            )
+            diff_stat, rc = run_git("diff", "--stat", f"{commit_sha}~1..{commit_sha}", cwd=project_dir)
             if rc != 0 or not diff_stat:
-                diff_stat, _ = run_git(
-                    "show", "--stat", commit_sha, "--format=", cwd=project_dir
-                )
+                diff_stat, _ = run_git("show", "--stat", commit_sha, "--format=", cwd=project_dir)
             pass_target_sha = commit_sha
         else:
             commit_msg = f"Rechecker pass {pass_num - 1} fixes"
@@ -232,23 +228,15 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
         retry_delay = 30
         claude_exit_code = 0
 
-        claude_stderr_file = (
-            Path(project_dir) / f".rechecker_stderr_{timestamp}_pass{pass_num}.log"
-        )
-
         for retry in range(max_retries + 1):
             if retry > 0:
                 wait_time = retry_delay * retry
-                pass_summaries.append(
-                    f"Pass {pass_num}: API error, retry {retry}/{max_retries} after {wait_time}s"
-                )
+                pass_summaries.append(f"Pass {pass_num}: API error, retry {retry}/{max_retries} after {wait_time}s")
                 time.sleep(wait_time)
                 cleanup_worktree(wt_name, project_dir)
                 os.chdir(project_dir)
 
-            claude_stderr_file = (
-                Path(project_dir) / f".rechecker_stderr_{timestamp}_pass{pass_num}.log"
-            )
+            claude_stderr_file = Path(project_dir) / f".rechecker_stderr_{timestamp}_pass{pass_num}.log"
             try:
                 with open(claude_stderr_file, "w") as stderr_f:
                     r = subprocess.run(
@@ -290,15 +278,11 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
             )
 
             if not is_transient:
-                pass_summaries.append(
-                    f"Pass {pass_num}: API error (non-transient), skipping retries"
-                )
+                pass_summaries.append(f"Pass {pass_num}: API error (non-transient), skipping retries")
                 break
 
             if retry == max_retries:
-                pass_summaries.append(
-                    f"Pass {pass_num}: API error, max retries exhausted"
-                )
+                pass_summaries.append(f"Pass {pass_num}: API error, max retries exhausted")
 
         # Clean up stderr log
         try:
@@ -315,20 +299,14 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
         # Also copy scan reports from the subdirectory if they exist
         wt_scan_dir = worktree_path / ".rechecker_scan_output"
         if wt_scan_dir.is_dir():
-            for scan_file in list(wt_scan_dir.glob("*.json")) + list(
-                wt_scan_dir.glob("*.log")
-            ):
+            for scan_file in list(wt_scan_dir.glob("*.json")) + list(wt_scan_dir.glob("*.log")):
                 try:
-                    shutil.copy2(
-                        str(scan_file), str(Path(reports_dir) / scan_file.name)
-                    )
+                    shutil.copy2(str(scan_file), str(Path(reports_dir) / scan_file.name))
                 except OSError:
                     pass
 
         # Parse issues from report
-        issues_found, issues_fixed, report_has_marker = parse_issues_from_report(
-            report_file
-        )
+        issues_found, issues_fixed, report_has_marker = parse_issues_from_report(report_file)
 
         # If no valid report, treat as unknown issues (never assume clean)
         if not report_has_marker:
@@ -339,11 +317,7 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
                     "--oneline",
                     cwd=str(worktree_path),
                 )
-                wt_commits = (
-                    len(wt_commits_out.splitlines())
-                    if rc == 0 and wt_commits_out
-                    else 0
-                )
+                wt_commits = len(wt_commits_out.splitlines()) if rc == 0 and wt_commits_out else 0
                 if wt_commits > 0:
                     issues_found = 1
                     issues_fixed = 1
@@ -361,17 +335,14 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
                 f.write(f"**Date**: {now_str}\n")
                 f.write(f"**Commit**: {commit_sha[:8]}\n\n")
                 f.write("## Summary\n")
-                f.write(
-                    "Review agent did not produce a valid report (missing ISSUES_FOUND marker).\n\n"
-                )
+                f.write("Review agent did not produce a valid report (missing ISSUES_FOUND marker).\n\n")
                 f.write(f"ISSUES_FOUND: {issues_found}\n")
                 f.write(f"ISSUES_FIXED: {issues_fixed}\n")
 
         total_issues_found += issues_found
         total_issues_fixed += issues_fixed
         pass_summaries.append(
-            f"Pass {pass_num}: {issues_found} issues found, {issues_fixed} fixed. "
-            f"Report: {Path(report_file).name}"
+            f"Pass {pass_num}: {issues_found} issues found, {issues_fixed} fixed. Report: {Path(report_file).name}"
         )
 
         # If 0 issues found (from a valid report), we are done
@@ -386,29 +357,21 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
 
             if consecutive_no_fix >= max_consecutive_no_fix:
                 final_status = (
-                    f"agent_bug: reviewer found issues but failed to commit "
-                    f"fixes {consecutive_no_fix} times in a row"
+                    f"agent_bug: reviewer found issues but failed to commit fixes {consecutive_no_fix} times in a row"
                 )
                 pass_summaries.append(
-                    f"Pass {pass_num}: No fixes committed - "
-                    f"{consecutive_no_fix} consecutive failures, giving up"
+                    f"Pass {pass_num}: No fixes committed - {consecutive_no_fix} consecutive failures, giving up"
                 )
                 break
 
-            pass_summaries.append(
-                f"Pass {pass_num}: No fixes committed by reviewer - retrying once more"
-            )
+            pass_summaries.append(f"Pass {pass_num}: No fixes committed by reviewer - retrying once more")
             if pass_num == max_passes:
                 final_status = "max_passes_reached"
             continue
 
         # Worktree exists: check for actual commits
-        wt_commits_out, rc = run_git(
-            "log", f"{current_branch}..{wt_branch}", "--oneline", cwd=str(worktree_path)
-        )
-        worktree_commits = (
-            len(wt_commits_out.splitlines()) if rc == 0 and wt_commits_out else 0
-        )
+        wt_commits_out, rc = run_git("log", f"{current_branch}..{wt_branch}", "--oneline", cwd=str(worktree_path))
+        worktree_commits = len(wt_commits_out.splitlines()) if rc == 0 and wt_commits_out else 0
 
         if worktree_commits == 0:
             consecutive_no_fix += 1
@@ -416,18 +379,14 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
 
             if consecutive_no_fix >= max_consecutive_no_fix:
                 final_status = (
-                    f"agent_bug: reviewer found issues but failed to commit "
-                    f"fixes {consecutive_no_fix} times in a row"
+                    f"agent_bug: reviewer found issues but failed to commit fixes {consecutive_no_fix} times in a row"
                 )
                 pass_summaries.append(
-                    f"Pass {pass_num}: No fixes committed - "
-                    f"{consecutive_no_fix} consecutive failures, giving up"
+                    f"Pass {pass_num}: No fixes committed - {consecutive_no_fix} consecutive failures, giving up"
                 )
                 break
 
-            pass_summaries.append(
-                f"Pass {pass_num}: No fixes committed by reviewer - retrying once more"
-            )
+            pass_summaries.append(f"Pass {pass_num}: No fixes committed by reviewer - retrying once more")
             if pass_num == max_passes:
                 final_status = "max_passes_reached"
             continue
@@ -440,12 +399,8 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
 
         porcelain_out, _ = run_git("status", "--porcelain", cwd=project_dir)
         if porcelain_out:
-            final_status = (
-                f"error: working directory not clean before merge at pass {pass_num}"
-            )
-            pass_summaries.append(
-                f"Pass {pass_num}: Merge skipped - dirty working directory"
-            )
+            final_status = f"error: working directory not clean before merge at pass {pass_num}"
+            pass_summaries.append(f"Pass {pass_num}: Merge skipped - dirty working directory")
             cleanup_worktree(wt_name, project_dir)
             break
 
@@ -459,9 +414,7 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
         else:
             run_git("merge", "--abort", cwd=project_dir)
             final_status = f"merge_conflict at pass {pass_num}"
-            pass_summaries.append(
-                f"Pass {pass_num}: MERGE CONFLICT - manual resolution needed"
-            )
+            pass_summaries.append(f"Pass {pass_num}: MERGE CONFLICT - manual resolution needed")
             cleanup_worktree(wt_name, project_dir)
             break
 
