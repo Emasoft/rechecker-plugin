@@ -396,9 +396,12 @@ ensure_docker_installed() {
     wsl) install_docker_wsl ;; windows) install_docker_windows ;;
     *) fatal "Unsupported platform." ;; esac
   if ! has_cmd docker; then
-    for p in /usr/bin/docker /usr/local/bin/docker /opt/homebrew/bin/docker "$HOME/.docker/bin/docker"; do
-      [[ -x "$p" ]] && { export PATH="$(dirname "$p"):$PATH"; break; }
+    # Search common system directories for the docker binary
+    local IFS=:; local sys_dirs="/usr/bin:/usr/local/bin:/opt/homebrew/bin:$HOME/.docker/bin"
+    for d in $sys_dirs; do
+      [[ -x "$d/docker" ]] && { export PATH="$d:$PATH"; break; }
     done
+    unset IFS
   fi
   has_cmd docker || fatal "Docker not on PATH after install."
 }

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Shared utilities for rechecker.py and recheck.py entry points.
 
 Extracts the duplicated lock management and two-phase review orchestration

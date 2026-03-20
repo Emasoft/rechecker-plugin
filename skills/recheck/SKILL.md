@@ -1,8 +1,8 @@
 ---
 name: recheck
 description: >
-  Trigger with /recheck. On-demand two-phase code review for any commit.
-  Same automated review loop as the PostToolUse hook but triggered manually.
+  Trigger with /recheck. Use when you want to manually review a specific
+  commit or re-check the latest changes. Same two-phase pipeline as the hook.
 ---
 
 # Recheck - On-Demand Code Review
@@ -18,14 +18,14 @@ Trigger the rechecker review loop manually on the latest commit (or a specified 
 - Git repository with at least one commit
 ## Instructions
 
-- [ ] Parse the user's request for an optional commit SHA
-- [ ] Run the recheck script via the Bash tool:
-  ```bash
-  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/recheck.py" <COMMIT_SHA_OR_EMPTY>
-  ```
-  Replace `<COMMIT_SHA_OR_EMPTY>` with the user-provided commit SHA, or omit it entirely to review HEAD
-- [ ] Wait for the script to complete (may take several minutes for large diffs)
-- [ ] Read the summary report file mentioned in the output to get the full results
+1. [ ] Parse the user's request for an optional commit SHA
+2. [ ] Run the recheck script via the Bash tool:
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/recheck.py" <COMMIT_SHA_OR_EMPTY>
+   ```
+   Replace `<COMMIT_SHA_OR_EMPTY>` with the user-provided commit SHA, or omit it entirely to review HEAD
+3. [ ] Wait for the script to complete (may take several minutes for large diffs)
+4. [ ] Read the summary report file mentioned in the output to get the full results
 
 ## Output
 
