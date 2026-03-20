@@ -6,7 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Miscellaneous Tasks
 
+- Add CLAUDE.md to gitignore (user-local, never committed)
 - Update uv.lock
+## [2.0.9] - 2026-03-20
+
+### Miscellaneous Tasks
+
+- Update uv.lock
+- Bump version to 2.0.9
 ## [2.0.8] - 2026-03-20
 
 ### Documentation
