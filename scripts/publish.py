@@ -256,13 +256,21 @@ def do_bump(root: Path, new_ver: str, dry_run: bool = False) -> bool:
 
 
 def stage_check_clean(root: Path) -> None:
-    """Step 1: Working tree must be clean."""
+    """Step 1: Working tree must be clean. Auto-commits uv.lock if it's the only dirty file."""
     cprint(f"\n{BOLD}[1/9] Checking working tree...{NC}")
     r = run(["git", "status", "--porcelain"], cwd=root, capture=True)
-    if r.stdout.strip():
-        cprint(f"  {RED}Working tree is dirty. Commit or stash changes first.{NC}")
-        cprint(r.stdout)
-        sys.exit(1)
+    dirty = r.stdout.strip()
+    if dirty:
+        # Auto-commit uv.lock if it's the only changed file (common after uv run)
+        dirty_files = [line.strip().split(maxsplit=1)[-1] for line in dirty.splitlines()]
+        if dirty_files == ["uv.lock"]:
+            cprint(f"  {YELLOW}Auto-committing uv.lock...{NC}")
+            run(["git", "add", "uv.lock"], cwd=root)
+            run(["git", "commit", "-m", "chore: update uv.lock"], cwd=root)
+        else:
+            cprint(f"  {RED}Working tree is dirty. Commit or stash changes first.{NC}")
+            cprint(r.stdout)
+            sys.exit(1)
     cprint(f"  {GREEN}Clean.{NC}")
 
 
