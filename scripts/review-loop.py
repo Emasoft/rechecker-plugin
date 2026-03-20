@@ -150,7 +150,9 @@ def main() -> None:
             # First pass: review the triggering commit
             # Use original commit as diff base when provided (Phase 2 after Phase 1 fixes)
             diff_stat_base = original_commit if original_commit else commit_sha
-            out, rc = run_git("log", "-1", "--format=%s", commit_sha, cwd=project_dir)
+            # For Phase 2, show the original commit message (for intent determination)
+            commit_msg_sha = original_commit if original_commit else commit_sha
+            out, rc = run_git("log", "-1", "--format=%s", commit_msg_sha, cwd=project_dir)
             commit_msg = out if rc == 0 else "Unknown"
             diff_stat, rc = run_git("diff", "--stat", f"{diff_stat_base}~1..{commit_sha}", cwd=project_dir)
             if rc != 0 or not diff_stat:
@@ -185,7 +187,8 @@ def main() -> None:
             diff_command = f"git diff {pre_merge_sha}..{pass_target_sha}"
 
         reset_command = f"git reset --hard {pass_target_sha}"
-        changed_files_gen = f"python3 {changed_files_script} {pass_target_sha} .rechecker_changed_files.txt"
+        # Quote paths for spaces in plugin install directory
+        changed_files_gen = f'python3 "{changed_files_script}" {pass_target_sha} .rechecker_changed_files.txt'
 
         # Build prompt conditionally: include scan step only when not skipped
         if skip_scan:
@@ -229,7 +232,7 @@ STEP 1: Run the automated linter and security scan with autofix.
 
     {changed_files_gen}
     mkdir -p .rechecker_scan_output
-    bash {scan_script} --autofix --target-list .rechecker_changed_files.txt --scan-timeout 10800 --skip-pull -o .rechecker_scan_output .
+    bash "{scan_script}" --autofix --target-list .rechecker_changed_files.txt --scan-timeout 10800 --skip-pull -o .rechecker_scan_output .
 
   The changed-files.py helper generates a clean list (one path per line, excludes
   deleted files, handles first commits and merge commits). The --target-list flag
