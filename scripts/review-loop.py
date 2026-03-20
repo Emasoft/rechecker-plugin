@@ -146,9 +146,11 @@ def main() -> None:
 
         if pass_num == 1:
             # First pass: review the triggering commit
+            # Use original commit as diff base when provided (Phase 2 after Phase 1 fixes)
+            diff_stat_base = original_commit if original_commit else commit_sha
             out, rc = run_git("log", "-1", "--format=%s", commit_sha, cwd=project_dir)
             commit_msg = out if rc == 0 else "Unknown"
-            diff_stat, rc = run_git("diff", "--stat", f"{commit_sha}~1..{commit_sha}", cwd=project_dir)
+            diff_stat, rc = run_git("diff", "--stat", f"{diff_stat_base}~1..{commit_sha}", cwd=project_dir)
             if rc != 0 or not diff_stat:
                 diff_stat, _ = run_git("show", "--stat", commit_sha, "--format=", cwd=project_dir)
             pass_target_sha = commit_sha
@@ -282,7 +284,10 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
                 cleanup_worktree(wt_name, project_dir)
                 os.chdir(project_dir)
 
-            claude_stderr_file = Path(project_dir) / f".rechecker_stderr_{timestamp}_pass{pass_num}.log"
+            # Write stderr to .rechecker/ (gitignored) to avoid polluting git status
+            rechecker_dir = Path(project_dir) / ".rechecker"
+            rechecker_dir.mkdir(parents=True, exist_ok=True)
+            claude_stderr_file = rechecker_dir / f"stderr_{timestamp}_pass{pass_num}.log"
             try:
                 with open(claude_stderr_file, "w") as stderr_f:
                     r = subprocess.run(

@@ -108,6 +108,7 @@ rechecker-plugin/
 |   +-- changed-files.py         # Generates list of changed files from git commit
 |   +-- scan.sh                  # Runs Super-Linter + Semgrep + TruffleHog via Docker
 |   +-- log-stop-failure.py      # StopFailure hook: logs API errors
+|   +-- publish.py              # Dev tool: bump version, tag, push, release
 +-- .gitignore
 +-- README.md
 ```
@@ -117,10 +118,12 @@ rechecker-plugin/
 | Script | Purpose | Input | Output |
 |--------|---------|-------|--------|
 | `rechecker.py` | Hook entry point. Reads PostToolUse JSON from stdin, detects `git commit`, acquires lock, invokes `review-loop.py` | JSON on stdin | JSON on stdout (`additionalContext`) |
+| `recheck.py` | On-demand review trigger for `/recheck` skill. Same two-phase pipeline as `rechecker.py` | `[commit_sha]` (optional, defaults to HEAD) | Phase results on stdout |
 | `review-loop.py` | Core review loop. Creates worktrees, runs scan + review agent, merges fixes, iterates until clean. Exit 0 = clean, 1 = issues remain | 6 positional args + optional: agent file, `--skip-scan`, `--original-commit <sha>` | Summary text on stdout |
 | `changed-files.py` | Generates list of files changed in a commit. Handles first commits, merge commits, excludes deleted files | `<commit_sha> [output_file]` | File paths (one per line) to stdout or file |
 | `scan.sh` | Runs Super-Linter, Semgrep, TruffleHog via Docker. Auto-installs Docker if needed. Supports `--target-list` for targeted scanning | CLI flags + project dir | JSON report path on stdout |
 | `log-stop-failure.py` | Logs StopFailure events (rate limits, server errors) for debugging | JSON on stdin | Appends to `rechecker_api_errors.log` |
+| `publish.py` | Dev tool: test, lint, validate, bump version, tag, push, create GitHub release | `--patch\|--minor\|--major [--dry-run]` | Console output |
 
 ## Agents
 
