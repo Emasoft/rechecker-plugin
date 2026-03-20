@@ -4,9 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Remove stale scan.sh refs, rename skip_scan, clean test artifact
+- CPV validation — 4 of 7 MINOR issues fixed
+- CPV validation — all MAJOR/MINOR fixed (2 remaining are false positives)
+
+### Features
+
+- Add find_duplicates and clamp utility functions
+- Replace Docker scan with direct linters + parallel subagent review
+## [2.0.15] - 2026-03-20
+
 ### Miscellaneous Tasks
 
 - Update uv.lock
+- Bump version to 2.0.15
 ## [2.0.14] - 2026-03-20
 
 ### Bug Fixes
