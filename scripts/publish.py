@@ -153,6 +153,23 @@ def update_pyproject_toml(root: Path, new_ver: str) -> tuple[bool, str]:
         return False, f"pyproject.toml update failed: {e}"
 
 
+def update_readme_badge(root: Path, new_ver: str) -> tuple[bool, str]:
+    """Update the version badge in README.md."""
+    readme = root / "README.md"
+    if not readme.is_file():
+        return False, "README.md not found"
+    try:
+        content = readme.read_text(encoding="utf-8")
+    except OSError as e:
+        return False, f"README.md read failed: {e}"
+    # Match shields.io version badge: version-X.Y.Z-blue
+    updated = re.sub(r"version-[0-9]+\.[0-9]+\.[0-9]+-blue", f"version-{new_ver}-blue", content)
+    if updated == content:
+        return False, "README.md: version badge not found"
+    readme.write_text(updated, encoding="utf-8")
+    return True, f"README.md badge -> {new_ver}"
+
+
 def update_python_versions(root: Path, new_ver: str) -> list[tuple[bool, str]]:
     """Update __version__ = '...' in all .py files under scripts/."""
     results: list[tuple[bool, str]] = []
@@ -192,6 +209,12 @@ def check_version_consistency(root: Path) -> tuple[bool, str]:
         m = re.search(r'^version\s*=\s*"([^"]*)"', pp.read_text(encoding="utf-8"), re.MULTILINE)
         versions["pyproject.toml"] = m.group(1) if m else None
 
+    # README.md badge
+    readme = root / "README.md"
+    if readme.is_file():
+        m = re.search(r"version-([0-9]+\.[0-9]+\.[0-9]+)-blue", readme.read_text(encoding="utf-8"))
+        versions["README.md badge"] = m.group(1) if m else None
+
     found = {k: v for k, v in versions.items() if v is not None}
     if not found:
         return False, "No version sources found"
@@ -209,6 +232,7 @@ def do_bump(root: Path, new_ver: str, dry_run: bool = False) -> bool:
     if dry_run:
         cprint(f"  Would update plugin.json -> {new_ver}")
         cprint(f"  Would update pyproject.toml -> {new_ver}")
+        cprint(f"  Would update README.md badge -> {new_ver}")
         cprint(f"  Would update __version__ vars -> {new_ver}")
         return True
 
@@ -217,6 +241,9 @@ def do_bump(root: Path, new_ver: str, dry_run: bool = False) -> bool:
 
     ok2, msg2 = update_pyproject_toml(root, new_ver)
     cprint(f"  {'OK' if ok2 else 'FAIL'}: {msg2}")
+
+    ok3, msg3 = update_readme_badge(root, new_ver)
+    cprint(f"  {'OK' if ok3 else 'SKIP'}: {msg3}")
 
     py_results = update_python_versions(root, new_ver)
     for ok, msg in py_results:
