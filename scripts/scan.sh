@@ -440,7 +440,10 @@ wait_for_docker_daemon() {
 ensure_image() {
   local image="$1"
   [[ "${SKIP_PULL:-false}" == "true" ]] && docker image inspect "$image" >> "$INTERNAL_LOG" 2>&1 && return 0
-  retry "$DOCKER_PULL_RETRIES" 10 "Pull $image" docker pull -q "$image"
+  # Super-Linter has no ARM64 image — force amd64 (runs via Rosetta/QEMU emulation)
+  local platform_flag=()
+  [[ "$image" == *"super-linter"* ]] && platform_flag=(--platform linux/amd64)
+  retry "$DOCKER_PULL_RETRIES" 10 "Pull $image" docker pull ${platform_flag[@]+"${platform_flag[@]}"} -q "$image"
 }
 
 pull_required_images() {
@@ -899,7 +902,8 @@ run_superlinter() {
   while (( attempt <= MAX_RETRIES )); do
     _log "Attempt $attempt/$MAX_RETRIES: Super-Linter"
     # FIX #15: Removed --network=none — Super-Linter needs network for linter plugins
-    run_docker_with_timeout docker run --rm \
+    # --platform linux/amd64: Super-Linter has no ARM64 image (runs via Rosetta/QEMU on Apple Silicon)
+    run_docker_with_timeout docker run --rm --platform linux/amd64 \
       -e RUN_LOCAL=true -e DEFAULT_BRANCH=main \
       -e CREATE_LOG_FILE=true -e LOG_FILE=superlinter.log -e LOG_LEVEL=ERROR \
       ${extra_env[@]+"${extra_env[@]}"} \
