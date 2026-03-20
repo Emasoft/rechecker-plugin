@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Miscellaneous Tasks
+
+- Update uv.lock
+
+### Refactor
+
+- Extract shared code into _shared.py (fix jscpd 6.15% > 5%)
+## [2.0.6] - 2026-03-20
+
 ### Bug Fixes
 
 - Release workflow install dev deps (ruff/mypy need --extra dev)
@@ -15,6 +24,7 @@ All notable changes to this project will be documented in this file.
 ### Miscellaneous Tasks
 
 - Update uv.lock
+- Bump version to 2.0.6
 ## [2.0.5] - 2026-03-20
 
 ### Bug Fixes
