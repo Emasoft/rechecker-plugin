@@ -332,9 +332,12 @@ def stage_gh_release(root: Path, new_ver: str, dry_run: bool) -> None:
         cprint(f"  Would create release: {tag}")
         return
     changelog_file = root / "CHANGELOG.md"
-    args = ["gh", "release", "create", tag, "--title", tag, "--generate-notes"]
+    args = ["gh", "release", "create", tag, "--title", tag]
     if changelog_file.is_file():
+        # Use changelog file as release notes (don't combine with --generate-notes)
         args.extend(["--notes-file", str(changelog_file)])
+    else:
+        args.append("--generate-notes")
     run(args, cwd=root, check=False)
     cprint(f"  {GREEN}Release created.{NC}")
 

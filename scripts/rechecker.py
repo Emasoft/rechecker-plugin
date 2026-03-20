@@ -9,6 +9,7 @@ import atexit
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -97,8 +98,8 @@ def main() -> None:
     if git_check.returncode != 0:
         sys.exit(0)
 
-    # Gate: verify claude CLI is available
-    if not any((Path(d) / "claude").exists() for d in os.environ.get("PATH", "").split(os.pathsep) if d):
+    # Gate: verify claude CLI is available (shutil.which handles Windows .exe/.cmd)
+    if not shutil.which("claude"):
         output_hook_json("ERROR: 'claude' CLI not found on PATH. Cannot run automated review.")
         sys.exit(0)
 

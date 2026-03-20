@@ -7,6 +7,7 @@ Called directly: python3 recheck.py [commit_sha]
 
 import atexit
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -32,8 +33,8 @@ def main() -> None:
         print(f"ERROR: Commit not found: {commit_sha}", file=sys.stderr)
         sys.exit(1)
 
-    # Verify claude CLI is available
-    if not any((Path(d) / "claude").exists() for d in os.environ.get("PATH", "").split(os.pathsep) if d):
+    # Verify claude CLI is available (shutil.which handles Windows .exe/.cmd)
+    if not shutil.which("claude"):
         print("ERROR: 'claude' CLI not found on PATH. Cannot run automated review.", file=sys.stderr)
         sys.exit(1)
 

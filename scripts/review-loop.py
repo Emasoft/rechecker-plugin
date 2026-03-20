@@ -39,10 +39,12 @@ def cleanup_worktree(wt_name: str, project_dir: str) -> None:
     # Try proper removal first
     _, rc = run_git("worktree", "remove", "--force", str(wt_path), cwd=project_dir)
     if rc != 0:
-        # Fallback: only remove if path is strictly under .claude/worktrees/
-        expected_prefix = str(Path(project_dir) / ".claude" / "worktrees") + os.sep
-        if wt_path.is_dir() and str(wt_path).startswith(expected_prefix):
-            shutil.rmtree(str(wt_path), ignore_errors=True)
+        # Fallback: only remove if resolved path is strictly under .claude/worktrees/
+        # Use .resolve() to prevent path traversal via ".." segments in wt_name
+        expected_prefix = str((Path(project_dir) / ".claude" / "worktrees").resolve()) + os.sep
+        resolved_wt = str(wt_path.resolve())
+        if wt_path.is_dir() and resolved_wt.startswith(expected_prefix):
+            shutil.rmtree(resolved_wt, ignore_errors=True)
 
     run_git("branch", "-D", branch_name, cwd=project_dir)
 
