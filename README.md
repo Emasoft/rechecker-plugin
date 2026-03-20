@@ -102,28 +102,39 @@ rechecker-plugin/
 |   +-- recheck/
 |       +-- SKILL.md             # /recheck slash command: on-demand review trigger
 +-- scripts/
-|   +-- rechecker.py             # Entry point: commit detection, locking, JSON I/O
-|   +-- recheck.py               # On-demand entry point for /recheck skill
+|   +-- rechecker.py             # Hook entry point: detects git commit, outputs hook JSON
+|   +-- recheck.py               # Skill entry point: /recheck slash command, plain stdout
+|   +-- _shared.py               # Shared logic: lock management, two-phase orchestration
 |   +-- review-loop.py           # Core loop: worktree, scan, review, merge, retry
 |   +-- changed-files.py         # Generates list of changed files from git commit
 |   +-- scan.sh                  # Runs Super-Linter + Semgrep + TruffleHog via Docker
 |   +-- log-stop-failure.py      # StopFailure hook: logs API errors
-|   +-- publish.py              # Dev tool: bump version, tag, push, release
+|   +-- publish.py               # Dev tool: bump version, tag, push, release
 +-- .gitignore
 +-- README.md
 ```
 
 ## Scripts
 
+The review pipeline has **two entry points** that share the same underlying logic via `_shared.py`:
+
+| Entry Point | Trigger | How it starts | I/O format |
+|-------------|---------|---------------|------------|
+| `rechecker.py` | **Automatic** — PostToolUse hook fires after every `git commit` | Claude Code calls it via `hooks.json`, passes JSON on stdin | Reads hook JSON, outputs `additionalContext` JSON |
+| `recheck.py` | **Manual** — user types `/recheck` or `/recheck abc1234` | Claude runs it via the Bash tool with an optional SHA argument | Reads argv, prints plain text results |
+
+Both entry points validate the environment (git repo, `claude` CLI on PATH), acquire a PID-based lock, then delegate to `_shared.run_two_phase_review()` which orchestrates Phase 1 and Phase 2. The only difference is how they receive input and format output.
+
 | Script | Purpose | Input | Output |
 |--------|---------|-------|--------|
-| `rechecker.py` | Hook entry point. Reads PostToolUse JSON from stdin, detects `git commit`, acquires lock, invokes `review-loop.py` | JSON on stdin | JSON on stdout (`additionalContext`) |
-| `recheck.py` | On-demand review trigger for `/recheck` skill. Same two-phase pipeline as `rechecker.py` | `[commit_sha]` (optional, defaults to HEAD) | Phase results on stdout |
+| `rechecker.py` | Hook entry point. Detects `git commit` in Bash tool calls, acquires lock, runs two-phase review | JSON on stdin | JSON on stdout (`additionalContext`) |
+| `recheck.py` | Skill entry point for `/recheck`. Same two-phase pipeline, different I/O | `[commit_sha]` (optional, defaults to HEAD) | Phase results on stdout |
+| `_shared.py` | Shared logic used by both entry points: lock management, claude CLI check, two-phase review orchestration | Imported as module | N/A |
 | `review-loop.py` | Core review loop. Creates worktrees, runs scan + review agent, merges fixes, iterates until clean. Exit 0 = clean, 1 = issues remain | 6 positional args + optional: agent file, `--skip-scan`, `--original-commit <sha>` | Summary text on stdout |
 | `changed-files.py` | Generates list of files changed in a commit. Handles first commits, merge commits, excludes deleted files | `<commit_sha> [output_file]` | File paths (one per line) to stdout or file |
 | `scan.sh` | Runs Super-Linter, Semgrep, TruffleHog via Docker. Auto-installs Docker if needed. Supports `--target-list` for targeted scanning | CLI flags + project dir | JSON report path on stdout |
 | `log-stop-failure.py` | Logs StopFailure events (rate limits, server errors) for debugging | JSON on stdin | Appends to `rechecker_api_errors.log` |
-| `publish.py` | Dev tool: test, lint, validate, bump version, tag, push, create GitHub release | `--patch\|--minor\|--major [--dry-run]` | Console output |
+| `publish.py` | Dev tool: test, lint, validate, bump version (including README badge), tag, push, create GitHub release | `--patch\|--minor\|--major [--dry-run]` | Console output |
 
 ## Agents
 
