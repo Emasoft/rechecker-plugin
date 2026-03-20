@@ -50,5 +50,6 @@ mega-linter.log
 
 # Claude Code local config
 .claude/
+CLAUDE.md
 .tldr/
 .tldrignore
