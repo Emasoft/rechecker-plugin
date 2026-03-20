@@ -6,11 +6,27 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Scan.sh fails on first run due to --skip-pull with no cached images
+- Super-Linter --platform linux/amd64 for Apple Silicon (no ARM64 image)
+- Scan.sh Super-Linter result JSON was malformed (grep -c bug)
+
+### Features
+
+- Add example utility with safe_divide and parse_config
+
+### Miscellaneous Tasks
+
+- Update uv.lock, remove stray scan report
+## [2.0.11] - 2026-03-20
+
+### Bug Fixes
+
 - Publish.py auto-commits uv.lock if only dirty file
 
 ### Miscellaneous Tasks
 
 - Update uv.lock
+- Bump version to 2.0.11
 ## [2.0.10] - 2026-03-20
 
 ### Miscellaneous Tasks
