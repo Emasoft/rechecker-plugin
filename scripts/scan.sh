@@ -724,7 +724,7 @@ check_scan_size() {
   [[ "$FOLLOW_SYMLINKS" == "true" ]] \
     && size_kb=$(du -sk "$PROJECT_DIR" 2>/dev/null | awk '{print $1}') \
     || size_kb=$(du -skP "$PROJECT_DIR" 2>/dev/null | awk '{print $1}')
-  [[ -n "${size_kb:-}" ]] && (( size_kb / 1024 > MAX_SCAN_SIZE_MB )) \
+  [[ -n "${size_kb:-}" ]] && (( ${size_kb:-0} / 1024 > MAX_SCAN_SIZE_MB )) \
     && fatal "Scan target exceeds --max-scan-size of ${MAX_SCAN_SIZE_MB}MB."
 }
 

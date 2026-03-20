@@ -33,8 +33,9 @@ Acquires lock (prevents concurrent reviews)
 |         |
 |         v
 |     Reset worktree to commit state
-|     Run scan.sh (Super-Linter + Semgrep + TruffleHog)
-|     View git diff, review code, fix bugs
+|     Run linters (ruff, mypy, shellcheck — no Docker)
+|     View git diff, review files in parallel (subagents)
+|     Fix bugs
 |     Commit fixes, write report with ISSUES_FOUND: N
 |         |
 |         v
@@ -73,9 +74,9 @@ Inject summary into main Claude's context
 |---------|-------------|
 | **Automatic trigger** | PostToolUse hook fires after every `git commit` (skips `--amend`) |
 | **Worktree isolation** | Review agent works in a separate `claude --worktree`, never touching the main branch until merge |
-| **Automated scanning** | Runs `scan.sh` first: Super-Linter (40+ linters), Semgrep (OWASP security), TruffleHog (secrets) |
-| **Targeted scanning** | Only scans files changed in the commit via `--target-list` (not the whole codebase) |
-| **Autofix** | Both scan.sh and the review agent fix issues in place |
+| **Direct linting** | Runs ruff, mypy, shellcheck directly on changed files (no Docker needed) |
+| **Parallel review** | Spawns one subagent per changed file for parallel code review |
+| **Autofix** | Review agent fixes issues in place |
 | **Iterative loop** | Repeats review-fix cycle until `ISSUES_FOUND: 0` or max 30 passes |
 | **Transient error resilience** | Retries `claude --worktree` on rate limits, 429, 503, 502, timeouts (3 retries with backoff) |
 | **Agent failure detection** | If reviewer finds issues but fails to commit fixes twice in a row, breaks and reports agent bug |
@@ -132,7 +133,7 @@ Both entry points validate the environment (git repo, `claude` CLI on PATH), acq
 | `_shared.py` | Shared logic used by both entry points: lock management, claude CLI check, two-phase review orchestration | Imported as module | N/A |
 | `review-loop.py` | Core review loop. Creates worktrees, runs scan + review agent, merges fixes, iterates until clean. Exit 0 = clean, 1 = issues remain | 6 positional args + optional: agent file, `--skip-scan`, `--original-commit <sha>` | Summary text on stdout |
 | `changed-files.py` | Generates list of files changed in a commit. Handles first commits, merge commits, excludes deleted files | `<commit_sha> [output_file]` | File paths (one per line) to stdout or file |
-| `scan.sh` | Runs Super-Linter, Semgrep, TruffleHog via Docker. Auto-installs Docker if needed. Supports `--target-list` for targeted scanning | CLI flags + project dir | JSON report path on stdout |
+| `scan.sh` | Optional: Runs Super-Linter, Semgrep, TruffleHog via Docker. Not used by default (linters run directly instead) | CLI flags + project dir | JSON report path on stdout |
 | `log-stop-failure.py` | Logs StopFailure events (rate limits, server errors) for debugging | JSON on stdin | Appends to `rechecker_api_errors.log` |
 | `publish.py` | Dev tool: test, lint, validate, bump version (including README badge), tag, push, create GitHub release | `--patch\|--minor\|--major [--dry-run]` | Console output |
 
@@ -140,14 +141,14 @@ Both entry points validate the environment (git repo, `claude` CLI on PATH), acq
 
 ### Phase 1: code-reviewer
 
-Checks code correctness, bugs, and security. Runs scan.sh first (Super-Linter + Semgrep + TruffleHog).
+Checks code correctness, bugs, and security. Runs linters directly (ruff, mypy, shellcheck), then reviews files in parallel via subagents.
 
 | Section | Contents |
 |---------|----------|
 | **Frontmatter** | model: opus[1m], all tools allowed |
 | **Review Checklist** | Correctness, Security, Error Handling, API Contracts, Code Correctness |
 | **What NOT to Check** | Style, performance (unless algorithmic), features, refactoring, docs |
-| **Execution Checklist** | 10 mandatory items the agent must complete before exiting |
+| **Execution Checklist** | 9 mandatory items the agent must complete before exiting |
 
 ### Phase 2: functionality-reviewer
 
@@ -284,7 +285,7 @@ reports_dev/
 | `claude` CLI on PATH | Runs the review agent in headless mode |
 | `python3` (3.12+) on PATH | All scripts are Python 3.12+ (except scan.sh) |
 | `git` repository | Worktrees, diffs, commits |
-| Docker (optional) | Required for scan.sh (Super-Linter, Semgrep, TruffleHog) |
+| Docker (optional) | Only needed if using scan.sh manually (not used by default) |
 | Max subscription | `claude --worktree` uses your Max subscription auth |
 
 ## Cross-Platform Compatibility

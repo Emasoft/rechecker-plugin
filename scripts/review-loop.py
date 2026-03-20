@@ -120,7 +120,6 @@ def main() -> None:
         i += 1
 
     max_passes = 30
-    scan_script = str(Path(plugin_root) / "scripts" / "scan.sh")
     changed_files_script = str(Path(plugin_root) / "scripts" / "changed-files.py")
 
     # State tracking
@@ -189,10 +188,10 @@ def main() -> None:
         reset_command = f"git reset --hard {pass_target_sha}"
         # Quote paths for spaces in plugin install directory
         changed_files_gen = f'python3 "{changed_files_script}" {pass_target_sha} .rechecker_changed_files.txt'
-        # Only skip Docker image pulls on pass 2+ (pass 1 needs to pull if images aren't cached)
-        skip_pull_flag = " --skip-pull" if pass_num > 1 else ""
+        # Commit prefix differs between code-reviewer and functionality-reviewer
+        commit_prefix = "rechecker-func" if skip_scan else "rechecker"
 
-        # Build prompt conditionally: include scan step only when not skipped
+        # Build prompt conditionally: skip_scan = functionality reviewer (no linters)
         if skip_scan:
             review_prompt = f"""You are reviewing code in a git worktree. Follow these steps EXACTLY:
 
@@ -207,7 +206,7 @@ STEP 3: Review every changed file thoroughly using the checklist in your agent i
 STEP 4: Fix any issues you find by editing the source files.
 
 STEP 5: If you made fixes (in STEP 4), commit everything:
-  git add -A && git commit -m 'rechecker-func: pass {pass_num} fixes'
+  git add -A && git commit -m '{commit_prefix}: pass {pass_num} fixes'
 
 STEP 6: Write your review report to: {report_filename}
   (Use the Write tool to save it in the current working directory.)
@@ -221,61 +220,45 @@ If you find NO issues, do NOT create a commit. Just write the report with ISSUES
         else:
             review_prompt = f"""You are reviewing code in a git worktree. Follow these steps EXACTLY:
 
-STEP 1: Run the automated linter and security scan with autofix.
-  This is the FIRST thing you must do. It runs Super-Linter (40+ language linters),
-  Semgrep (OWASP security rules with autofix), and TruffleHog (secret detection) via Docker.
+STEP 1: Reset the worktree and generate the list of changed files:
+  {reset_command}
+  {changed_files_gen}
 
-  First, ensure the worktree has the right files checked out:
-    {reset_command}
+STEP 2: Run linters on the changed files (fast, no Docker needed).
+  Read .rechecker_changed_files.txt to get the file list, then run:
+  - For .py files: ruff check <files> && mypy <files> --ignore-missing-imports
+  - For .sh files: shellcheck <files>
+  - For .js/.ts files: npx eslint <files> (if eslint is available)
+  If a linter is not installed, skip it and note in the report. Linters are best-effort.
 
-  Then generate the list of changed files and run the scan ONLY on those files.
-  The scan report MUST go into a subdirectory (not the worktree root) to avoid
-  polluting the worktree with untracked files that would be caught by git add -A.
-
-    {changed_files_gen}
-    mkdir -p .rechecker_scan_output
-    bash "{scan_script}" --autofix --target-list .rechecker_changed_files.txt --scan-timeout 10800{skip_pull_flag} -o .rechecker_scan_output .
-
-  The changed-files.py helper generates a clean list (one path per line, excludes
-  deleted files, handles first commits and merge commits). The --target-list flag
-  tells scan.sh to scan only those files instead of the entire codebase.
-  --scan-timeout 10800 allows up to 3 hours total for the scan.
-  On pass 1, Docker images are pulled if not cached. On pass 2+, --skip-pull
-  uses cached images (avoids re-pulling on every pass).
-
-  IMPORTANT: Do NOT run scan.sh without --target-list, as that would scan the
-  entire codebase and autofix unrelated files.
-
-  The script prints the scan report file path to stdout. Read that report file.
-  After reading the report, clean up scan artifacts so they don't pollute the commit:
-    rm -rf .rechecker_scan_output .rechecker_changed_files.txt
-
-  If the scan fails (e.g. Docker not available, no changed files), just continue to STEP 2.
-  The scan is a best-effort enhancement, not a hard requirement.
-  If the scan auto-fixed files, note what was fixed. Those fixes are already applied in place.
-
-STEP 2: View the code changes to review (the original commit diff):
+STEP 3: View the code changes to review:
   {diff_command}
 
-STEP 3: Review every changed file thoroughly using the checklist in your agent instructions.
-  Also review any remaining (unfixed) findings from the scan report in STEP 1.
+STEP 4: Review each changed file in PARALLEL using the Agent tool.
+  For each changed file, spawn a subagent with subagent_type="general-purpose":
+  - Prompt: "Review this file for bugs. File: <path>. Diff: <relevant diff section>.
+    Linter output: <any linter findings for this file>.
+    Check for: logic errors, null handling, type mismatches, edge cases, security issues,
+    error handling, API contract violations, dead code, broken references.
+    Return ONLY a JSON array of findings: [{{"file":"...","line":N,"severity":"critical|major|minor","description":"..."}}]
+    If no issues found, return: []"
+  - Run all subagents in parallel (one message with multiple Agent tool calls)
+  - Collect their findings
 
-STEP 4: Fix any issues you find by editing the source files.
-  Do NOT re-fix things the scan already auto-fixed in STEP 1.
+STEP 5: Fix all issues found (from linters + subagents) by editing the source files.
 
-STEP 5: If you made fixes (in STEP 4) OR if the scan made fixes (in STEP 1), commit everything:
-  git add -A && git commit -m 'rechecker: pass {pass_num} fixes'
+STEP 6: If you made fixes, commit everything:
+  git add -A && git commit -m '{commit_prefix}: pass {pass_num} fixes'
 
-STEP 6: Write your review report to: {report_filename}
+STEP 7: Write your review report to: {report_filename}
   (Use the Write tool to save it in the current working directory.)
-  Include a section for scan results (what the scan found, what it auto-fixed, what remains).
 
 Context:
 - Commit message: {commit_msg}
 - Commit SHA: {commit_sha}
 - Review pass: {pass_num} of {max_passes}
 
-If you find NO issues AND the scan found NO issues, do NOT create a commit. Just write the report with ISSUES_FOUND: 0"""
+If you find NO issues AND linters found NO issues, do NOT create a commit. Just write the report with ISSUES_FOUND: 0"""
 
         # Run headless Claude in a managed worktree
         # Retry logic for transient API errors (rate limits, server overload).
@@ -354,15 +337,6 @@ If you find NO issues AND the scan found NO issues, do NOT create a commit. Just
         if wt_report_file.is_file():
             Path(reports_dir).mkdir(parents=True, exist_ok=True)
             shutil.copy2(str(wt_report_file), report_file)
-
-        # Also copy scan reports from the subdirectory if they exist
-        wt_scan_dir = worktree_path / ".rechecker_scan_output"
-        if wt_scan_dir.is_dir():
-            for scan_file in list(wt_scan_dir.glob("*.json")) + list(wt_scan_dir.glob("*.log")):
-                try:
-                    shutil.copy2(str(scan_file), str(Path(reports_dir) / scan_file.name))
-                except OSError:
-                    pass
 
         # Parse issues from report
         issues_found, issues_fixed, report_has_marker = parse_issues_from_report(report_file)
