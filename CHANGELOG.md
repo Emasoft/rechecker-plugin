@@ -4,9 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Documentation
+
+- Explain two entry points and _shared.py in README Scripts section
+
 ### Miscellaneous Tasks
 
 - Update uv.lock
+## [2.0.7] - 2026-03-20
+
+### Miscellaneous Tasks
+
+- Update uv.lock
+- Bump version to 2.0.7
 
 ### Refactor
 
