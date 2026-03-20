@@ -27,33 +27,44 @@ PostToolUse hook detects "git commit" (not --amend)
 Acquires lock (prevents concurrent reviews)
         |
         v
+=== PHASE 1: CODE REVIEW (code-reviewer agent) ===
+        |
 +---> Creates worktree via 'claude --worktree'
 |         |
 |         v
-|     STEP 1: Reset worktree to commit state
-|     STEP 2: Run scan.sh (Super-Linter + Semgrep + TruffleHog)
-|              with --autofix --target-list (changed files only)
-|     STEP 3: View git diff of the commit
-|     STEP 4: Manual code review (agent reads full files)
-|     STEP 5: Fix all issues found
-|     STEP 6: Commit fixes (scan autofix + manual fixes)
-|     STEP 7: Write detailed report with ISSUES_FOUND: N
+|     Reset worktree to commit state
+|     Run scan.sh (Super-Linter + Semgrep + TruffleHog)
+|     View git diff, review code, fix bugs
+|     Commit fixes, write report with ISSUES_FOUND: N
 |         |
 |         v
-|     Copy report to reports_dev/
-|     Merge worktree branch into main
-|     Destroy worktree
-|         |
-|         v
-|     ISSUES_FOUND > 0?
-|       YES --> loop back (up to 30 passes)
-|       NO  --> done, code is clean
-|
+|     Merge fixes, destroy worktree
+|     ISSUES_FOUND > 0? YES --> loop (up to 30 passes)
 +--- loop
+        |
+        NO (code is clean)
+        |
+        v
+=== PHASE 2: FUNCTIONALITY REVIEW (functionality-reviewer agent) ===
+        |
++---> Creates worktree via 'claude --worktree'
+|         |
+|         v
+|     Reset worktree to commit state
+|     View git diff, determine intent from names/docs/tests
+|     Verify code does what it's supposed to do
+|     Fix discrepancies, write report with ISSUES_FOUND: N
+|         |
+|         v
+|     Merge fixes, destroy worktree
+|     ISSUES_FOUND > 0? YES --> loop (up to 30 passes)
++--- loop
+        |
+        NO (code works correctly)
         |
         v
 Inject summary into main Claude's context
-(tells Claude to READ the summary report)
+(tells Claude to READ the summary reports)
 ```
 
 ## Features
@@ -85,7 +96,8 @@ rechecker-plugin/
 +-- hooks/
 |   +-- hooks.json               # PostToolUse on Bash + StopFailure logging
 +-- agents/
-|   +-- code-reviewer.md         # Agent definition with review checklist + execution checklist
+|   +-- code-reviewer.md         # Phase 1: code correctness, bugs, security
+|   +-- functionality-reviewer.md # Phase 2: does the code do what it's supposed to
 +-- skills/
 |   +-- recheck/
 |       +-- SKILL.md             # /recheck slash command: on-demand review trigger
@@ -110,19 +122,29 @@ rechecker-plugin/
 | `scan.sh` | Runs Super-Linter, Semgrep, TruffleHog via Docker. Auto-installs Docker if needed. Supports `--target-list` for targeted scanning | CLI flags + project dir | JSON report path on stdout |
 | `log-stop-failure.py` | Logs StopFailure events (rate limits, server errors) for debugging | JSON on stdin | Appends to `rechecker_api_errors.log` |
 
-## Agent: code-reviewer
+## Agents
 
-The `agents/code-reviewer.md` defines the review agent with:
+### Phase 1: code-reviewer
+
+Checks code correctness, bugs, and security. Runs scan.sh first (Super-Linter + Semgrep + TruffleHog).
 
 | Section | Contents |
 |---------|----------|
 | **Frontmatter** | model: opus[1m], all tools allowed |
-| **Workflow** | 7-step process: scan, diff, review, fix, commit, report |
 | **Review Checklist** | Correctness, Security, Error Handling, API Contracts, Code Correctness |
 | **What NOT to Check** | Style, performance (unless algorithmic), features, refactoring, docs |
-| **Report Format** | Markdown with Issues Found, Scan Results, Files Reviewed, ISSUES_FOUND/FIXED counts |
-| **Rules for Fixing** | Minimal fixes, preserve intent, no new features, uncertain = report only |
 | **Execution Checklist** | 10 mandatory items the agent must complete before exiting |
+
+### Phase 2: functionality-reviewer
+
+Verifies code actually does what it is supposed to do. Runs only after Phase 1 completes with 0 issues. No scan.sh step.
+
+| Section | Contents |
+|---------|----------|
+| **Frontmatter** | model: opus[1m], all tools allowed |
+| **Review Checklist** | Intent Verification, Behavioral Correctness, Requirements Coverage, I/O Contract, Integration |
+| **What NOT to Check** | Syntax, type errors, security (already handled by Phase 1) |
+| **Execution Checklist** | 9 mandatory items the agent must complete before exiting |
 
 ## Review Checklist (What the Agent Checks)
 
@@ -173,10 +195,11 @@ Reports are saved to `<project>/reports_dev/` with these files:
 
 | Type | Name | Description |
 |------|------|-------------|
-| Hook | `PostToolUse` → `rechecker.py` | Auto-triggers code review after every `git commit` |
+| Hook | `PostToolUse` → `rechecker.py` | Auto-triggers two-phase review after every `git commit` |
 | Hook | `StopFailure` → `log-stop-failure.py` | Logs API errors (rate limits, server errors) |
-| Agent | `code-reviewer` | Opus 4.6 (1M) agent that reviews diffs, finds bugs, fixes them |
-| Skill | `/recheck` | On-demand review trigger for any commit |
+| Agent | `code-reviewer` | Phase 1: Opus 4.6 (1M) — code correctness, bugs, security |
+| Agent | `functionality-reviewer` | Phase 2: Opus 4.6 (1M) — verifies code does what it's supposed to |
+| Skill | `/recheck` | On-demand two-phase review trigger for any commit |
 
 ## Installation
 

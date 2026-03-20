@@ -163,12 +163,17 @@ def main() -> None:
     # Resolve plugin root
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", str(Path(__file__).resolve().parent.parent))
 
-    # Run the review loop
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Run the review loop in two phases:
+    # Phase 1: Code review (syntax, bugs, security) with scan.sh
+    # Phase 2: Functionality review (does code do what it's supposed to) without scan
     review_loop_script = Path(plugin_root) / "scripts" / "review-loop.py"
+    code_reviewer_agent = str(Path(plugin_root) / "agents" / "code-reviewer.md")
+    func_reviewer_agent = str(Path(plugin_root) / "agents" / "functionality-reviewer.md")
 
+    # Phase 1: Code review
+    timestamp_code = datetime.now().strftime("%Y%m%d_%H%M%S")
     try:
-        loop_run = subprocess.run(
+        phase1 = subprocess.run(
             [
                 sys.executable,
                 str(review_loop_script),
@@ -176,17 +181,55 @@ def main() -> None:
                 commit_sha,
                 current_branch,
                 str(reports_dir),
-                timestamp,
+                timestamp_code,
                 plugin_root,
+                code_reviewer_agent,
             ],
             capture_output=True,
             text=True,
         )
-        loop_result = loop_run.stdout.strip() if loop_run.stdout.strip() else "Review completed."
+        phase1_result = phase1.stdout.strip() if phase1.stdout.strip() else "Code review completed."
+        phase1_clean = "Review completed (clean)" in phase1_result
     except Exception:
-        loop_result = "Review loop failed or timed out."
+        phase1_result = "Code review loop failed or timed out."
+        phase1_clean = False
 
-    output_hook_json(loop_result)
+    # Phase 2: Functionality review (only if phase 1 succeeded)
+    phase2_result = ""
+    if phase1_clean:
+        # Re-read HEAD since phase 1 may have merged fix commits
+        head_after = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=project_dir)
+        commit_sha_phase2 = head_after.stdout.strip() if head_after.returncode == 0 else commit_sha
+
+        timestamp_func = datetime.now().strftime("%Y%m%d_%H%M%S")
+        try:
+            phase2 = subprocess.run(
+                [
+                    sys.executable,
+                    str(review_loop_script),
+                    project_dir,
+                    commit_sha_phase2,
+                    current_branch,
+                    str(reports_dir),
+                    timestamp_func,
+                    plugin_root,
+                    func_reviewer_agent,
+                    "--skip-scan",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            phase2_result = phase2.stdout.strip() if phase2.stdout.strip() else ""
+        except Exception:
+            phase2_result = "Functionality review loop failed or timed out."
+
+    # Combine results
+    if phase2_result:
+        combined = f"[Phase 1 - Code Review] {phase1_result}\n[Phase 2 - Functionality Review] {phase2_result}"
+    else:
+        combined = phase1_result
+
+    output_hook_json(combined)
     sys.exit(0)
 
 

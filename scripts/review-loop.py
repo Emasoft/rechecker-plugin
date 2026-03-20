@@ -99,8 +99,12 @@ def main() -> None:
     timestamp = sys.argv[5]
     plugin_root = sys.argv[6]
 
+    # Optional 7th arg: agent file path (default: code-reviewer.md)
+    agent_file = sys.argv[7] if len(sys.argv) > 7 else str(Path(plugin_root) / "agents" / "code-reviewer.md")
+    # Optional flag: --skip-scan (skip the scan.sh step, used by functionality-reviewer)
+    skip_scan = "--skip-scan" in sys.argv[7:]
+
     max_passes = 30
-    agent_file = str(Path(plugin_root) / "agents" / "code-reviewer.md")
     scan_script = str(Path(plugin_root) / "scripts" / "scan.sh")
     changed_files_script = str(Path(plugin_root) / "scripts" / "changed-files.py")
 
@@ -164,7 +168,34 @@ def main() -> None:
         reset_command = f"git reset --hard {pass_target_sha}"
         changed_files_gen = f"python3 {changed_files_script} {pass_target_sha} .rechecker_changed_files.txt"
 
-        review_prompt = f"""You are reviewing code in a git worktree. Follow these steps EXACTLY:
+        # Build prompt conditionally: include scan step only when not skipped
+        if skip_scan:
+            review_prompt = f"""You are reviewing code in a git worktree. Follow these steps EXACTLY:
+
+STEP 1: Ensure the worktree has the right files checked out:
+  {reset_command}
+
+STEP 2: View the code changes to review (the original commit diff):
+  {diff_command}
+
+STEP 3: Review every changed file thoroughly using the checklist in your agent instructions.
+
+STEP 4: Fix any issues you find by editing the source files.
+
+STEP 5: If you made fixes (in STEP 4), commit everything:
+  git add -A && git commit -m 'rechecker-func: pass {pass_num} fixes'
+
+STEP 6: Write your review report to: {report_filename}
+  (Use the Write tool to save it in the current working directory.)
+
+Context:
+- Commit message: {commit_msg}
+- Commit SHA: {commit_sha}
+- Review pass: {pass_num} of {max_passes}
+
+If you find NO issues, do NOT create a commit. Just write the report with ISSUES_FOUND: 0"""
+        else:
+            review_prompt = f"""You are reviewing code in a git worktree. Follow these steps EXACTLY:
 
 STEP 1: Run the automated linter and security scan with autofix.
   This is the FIRST thing you must do. It runs Super-Linter (40+ language linters),
