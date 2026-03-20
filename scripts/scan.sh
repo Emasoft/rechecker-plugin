@@ -916,8 +916,9 @@ run_superlinter() {
   done
 
   if [[ -f "$tmplog" ]]; then
-    local ec; ec=$(grep -cE "ERROR|FATAL" "$tmplog" 2>/dev/null || echo "0")
-    local fc=0; [[ "$AUTOFIX" == "true" ]] && fc=$(grep -ciE "fixed|auto.?fix" "$tmplog" 2>/dev/null || echo "0")
+    # grep -c outputs "0" AND returns exit 1 when no matches — capture output only, ignore exit code
+    local ec; ec=$(grep -cE "ERROR|FATAL" "$tmplog" 2>/dev/null) || ec=0
+    local fc=0; [[ "$AUTOFIX" == "true" ]] && { fc=$(grep -ciE "fixed|auto.?fix" "$tmplog" 2>/dev/null) || fc=0; }
     # FIX #16: correct status computation
     local status="findings"
     (( rc == 0 )) && status="pass"
