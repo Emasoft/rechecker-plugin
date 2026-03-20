@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Miscellaneous Tasks
+
+- Update uv.lock
+## [2.0.14] - 2026-03-20
+
 ### Bug Fixes
 
 - Remove duplicate hooks reference from plugin.json (auto-loaded by convention)
@@ -11,6 +16,7 @@ All notable changes to this project will be documented in this file.
 ### Miscellaneous Tasks
 
 - Update uv.lock
+- Bump version to 2.0.14
 ## [2.0.13] - 2026-03-20
 
 ### Miscellaneous Tasks
