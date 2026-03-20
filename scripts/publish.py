@@ -243,8 +243,8 @@ def stage_tests(root: Path) -> None:
     """Step 2: Run pytest."""
     cprint(f"\n{BOLD}[2/9] Running tests...{NC}")
     test_dir = root / "tests"
-    if not test_dir.is_dir():
-        cprint(f"  {YELLOW}No tests/ directory — skipping.{NC}")
+    if not test_dir.is_dir() or not list(test_dir.glob("test_*.py")):
+        cprint(f"  {YELLOW}No test files found — skipping.{NC}")
         return
     run(["uv", "run", "pytest", "tests/", "-x", "-q", "--tb=short"], cwd=root)
     cprint(f"  {GREEN}Tests passed.{NC}")
