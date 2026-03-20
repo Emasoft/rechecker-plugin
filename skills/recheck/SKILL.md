@@ -1,40 +1,36 @@
 ---
 name: recheck
 description: >
-  On-demand code review for any commit. Runs the same automated review loop
-  that the PostToolUse hook triggers after git commits. Use when you want to
-  manually review a specific commit or re-check the latest changes.
+  Trigger with /recheck. On-demand two-phase code review for any commit.
+  Same automated review loop as the PostToolUse hook but triggered manually.
 ---
 
 # Recheck - On-Demand Code Review
 
 ## Overview
 
-Trigger the rechecker review loop manually on the latest commit (or a specified commit). This does the same thing the PostToolUse hook does automatically after git commits, but on demand.
+Trigger the rechecker review loop manually on the latest commit (or a specified commit). Runs the same two-phase pipeline (code review + functionality review) that fires automatically after git commits.
 
 ## Prerequisites
 
 - `claude` CLI on PATH (runs the review agent in headless mode)
 - `python3` on PATH
 - Git repository with at least one commit
-- Docker (optional, for scan.sh security scanning)
-
 ## Instructions
 
-1. Parse the user's request for an optional commit SHA
-2. Run the recheck script via the Bash tool:
-   ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/recheck.py" <COMMIT_SHA_OR_EMPTY>
-   ```
-3. Replace `<COMMIT_SHA_OR_EMPTY>` with the user-provided commit SHA, or omit it entirely to review HEAD
-4. Wait for the script to complete (may take several minutes for large diffs)
-5. Read the summary report file mentioned in the output to get the full results
+- [ ] Parse the user's request for an optional commit SHA
+- [ ] Run the recheck script via the Bash tool:
+  ```bash
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/recheck.py" <COMMIT_SHA_OR_EMPTY>
+  ```
+  Replace `<COMMIT_SHA_OR_EMPTY>` with the user-provided commit SHA, or omit it entirely to review HEAD
+- [ ] Wait for the script to complete (may take several minutes for large diffs)
+- [ ] Read the summary report file mentioned in the output to get the full results
 
 ## Output
 
 - Per-pass review reports: `reports_dev/rechecker_<ts>_pass<N>.md`
 - Final summary: `reports_dev/rechecker_<ts>_summary.md`
-- Scan results: `reports_dev/scan-report-*.json` (if Docker available)
 - Exit code 0 on success, non-zero on failure
 
 ## Error Handling

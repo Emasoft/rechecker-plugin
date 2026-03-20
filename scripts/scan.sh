@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2024
 # ═══════════════════════════════════════════════════════════════════════════════
 #  scan.sh — Headless, silent, self-installing, fault-tolerant code scanner
 #
