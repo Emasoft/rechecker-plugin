@@ -4,10 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Publish.py auto-commits uv.lock if only dirty file
+
+### Miscellaneous Tasks
+
+- Update uv.lock
+## [2.0.10] - 2026-03-20
+
 ### Miscellaneous Tasks
 
 - Add CLAUDE.md to gitignore (user-local, never committed)
 - Update uv.lock
+- Bump version to 2.0.10
 ## [2.0.9] - 2026-03-20
 
 ### Miscellaneous Tasks
