@@ -6,6 +6,5 @@
     "name": "Emasoft",
     "url": "https://github.com/Emasoft"
   },
-  "license": "MIT",
-  "hooks": "./hooks/hooks.json"
+  "license": "MIT"
 }
