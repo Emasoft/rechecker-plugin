@@ -6,6 +6,19 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Release workflow install dev deps (ruff/mypy need --extra dev)
+
+### Features
+
+- Publish.py auto-updates README version badge
+
+### Miscellaneous Tasks
+
+- Update uv.lock
+## [2.0.5] - 2026-03-20
+
+### Bug Fixes
+
 - CI workflows use uv sync --extra dev (installs ruff, pytest, pyyaml)
 - Version badge, stale .sh reference, dead code, formatting
 - Audit fixes — double escaping, phase 2 diff, exit codes, docs
@@ -27,6 +40,7 @@ All notable changes to this project will be documented in this file.
 ### Miscellaneous Tasks
 
 - Configure marketplace notification for Emasoft/emasoft-plugins
+- Bump version to 2.0.5
 
 ### Refactor
 
