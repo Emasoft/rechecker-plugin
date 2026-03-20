@@ -132,7 +132,7 @@ def run_two_phase_review(
                     timestamp_func,
                     plugin_root,
                     func_reviewer_agent,
-                    "--skip-scan",
+                    "--func-review",
                     "--original-commit",
                     commit_sha,
                 ],

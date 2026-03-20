@@ -7,7 +7,7 @@
 [![Validation](https://github.com/Emasoft/rechecker-plugin/actions/workflows/validate.yml/badge.svg)](https://github.com/Emasoft/rechecker-plugin/actions/workflows/validate.yml)
 <!--BADGES-END-->
 
-A Claude Code plugin that automatically reviews and fixes code changes after every git commit. It spawns a separate Claude instance in an isolated git worktree, runs automated linters and security scanners, performs a thorough manual code review, fixes all issues found, and loops until the code is clean — or reports what remains.
+A Claude Code plugin that automatically reviews and fixes code changes after every git commit. It spawns a separate Claude instance in an isolated git worktree, runs automated linters (ruff, mypy, shellcheck), performs a parallel code review via subagents, fixes all issues found, and loops until the code is clean — or reports what remains.
 
 **v2.0.0**: All scripts rewritten in Python 3 (except scan.sh). Agent model upgraded to Opus 4.6 (1M context). Added `/recheck` slash command for on-demand reviews. Added LLM Externalizer MCP integration for offloading read-only analysis. Full `mypy --strict` type annotations.
 
@@ -82,7 +82,7 @@ Inject summary into main Claude's context
 | **Agent failure detection** | If reviewer finds issues but fails to commit fixes twice in a row, breaks and reports agent bug |
 | **Merge conflict handling** | Aborts merge on conflict, reports it, stops the loop |
 | **Detailed reports** | Per-pass reports + summary saved to `reports_dev/` |
-| **Execution checklist** | 10-item mandatory checklist the agent must complete before exiting |
+| **Execution checklist** | 9-item mandatory checklist the agent must complete before exiting |
 | **StopFailure logging** | Logs API errors (rate limits, server errors) to `reports_dev/rechecker_api_errors.log` |
 | **Lock file** | PID-based lock prevents concurrent review cycles |
 | **On-demand review** | `/recheck` slash command triggers the same review loop manually on any commit |
@@ -108,7 +108,7 @@ rechecker-plugin/
 |   +-- _shared.py               # Shared logic: lock management, two-phase orchestration
 |   +-- review-loop.py           # Core loop: worktree, scan, review, merge, retry
 |   +-- changed-files.py         # Generates list of changed files from git commit
-|   +-- scan.sh                  # Runs Super-Linter + Semgrep + TruffleHog via Docker
+|   +-- scan.sh                  # Optional: Super-Linter + Semgrep + TruffleHog via Docker
 |   +-- log-stop-failure.py      # StopFailure hook: logs API errors
 |   +-- publish.py               # Dev tool: bump version, tag, push, release
 +-- .gitignore
@@ -131,7 +131,7 @@ Both entry points validate the environment (git repo, `claude` CLI on PATH), acq
 | `rechecker.py` | Hook entry point. Detects `git commit` in Bash tool calls, acquires lock, runs two-phase review | JSON on stdin | JSON on stdout (`additionalContext`) |
 | `recheck.py` | Skill entry point for `/recheck`. Same two-phase pipeline, different I/O | `[commit_sha]` (optional, defaults to HEAD) | Phase results on stdout |
 | `_shared.py` | Shared logic used by both entry points: lock management, claude CLI check, two-phase review orchestration | Imported as module | N/A |
-| `review-loop.py` | Core review loop. Creates worktrees, runs scan + review agent, merges fixes, iterates until clean. Exit 0 = clean, 1 = issues remain | 6 positional args + optional: agent file, `--skip-scan`, `--original-commit <sha>` | Summary text on stdout |
+| `review-loop.py` | Core review loop. Creates worktrees, runs scan + review agent, merges fixes, iterates until clean. Exit 0 = clean, 1 = issues remain | 6 positional args + optional: agent file, `--func-review`, `--original-commit <sha>` | Summary text on stdout |
 | `changed-files.py` | Generates list of files changed in a commit. Handles first commits, merge commits, excludes deleted files | `<commit_sha> [output_file]` | File paths (one per line) to stdout or file |
 | `scan.sh` | Optional: Runs Super-Linter, Semgrep, TruffleHog via Docker. Not used by default (linters run directly instead) | CLI flags + project dir | JSON report path on stdout |
 | `log-stop-failure.py` | Logs StopFailure events (rate limits, server errors) for debugging | JSON on stdin | Appends to `rechecker_api_errors.log` |
@@ -177,9 +177,8 @@ Reports are saved to `<project>/reports_dev/` with these files:
 
 | File | Contents |
 |------|----------|
-| `rechecker_<ts>_pass<N>.md` | Per-pass review report (issues found, fixed, scan results) |
+| `rechecker_<ts>_pass<N>.md` | Per-pass review report (issues found, fixed, linter results) |
 | `rechecker_<ts>_summary.md` | Final summary (status, total issues, pass details) |
-| `scan-report-*.json` | Raw scan.sh JSON output (Super-Linter + Semgrep + TruffleHog) |
 | `rechecker_api_errors.log` | API error log (rate limits, server errors) |
 
 ## Loop Termination Conditions
@@ -201,8 +200,7 @@ Reports are saved to `<project>/reports_dev/` with these files:
 | Server error (502/503/504) | Retry 3x with backoff |
 | Timeout / ECONNRESET | Retry 3x with backoff |
 | Auth failure / invalid request | No retry (non-transient) |
-| Docker not available | Scan skipped, manual review continues |
-| Scan fails | Documented in Checklist Failures section of report |
+| Linter not installed | Skipped, noted in Checklist Failures section of report |
 | No changed files | Clean exit (nothing to review) |
 | First commit (no parent) | Handled via `git show` fallback |
 
@@ -262,7 +260,6 @@ The plugin works out of the box with no configuration. Key defaults:
 | Setting | Default | Where |
 |---------|---------|-------|
 | Max passes | 30 | `review-loop.py` (`max_passes`) |
-| Scan timeout | 3 hours | `review-loop.py` (prompt `--scan-timeout`) |
 | Hook timeout | 24 hours | `hooks/hooks.json` |
 | Retry count | 3 | `review-loop.py` (`max_retries`) |
 | Retry delay | 30s base | `review-loop.py` (`retry_delay`) |
@@ -303,10 +300,8 @@ reports_dev/
 |---------|------------|
 | Git state corruption | Merge conflicts abort cleanly; worktrees are isolated |
 | Accidental file deletion | `cleanup_worktree` validates path contains `/.claude/worktrees/` before forced removal |
-| Scan report pollution | Scan output goes to `.rechecker_scan_output/` subdirectory, cleaned up after reading |
 | Concurrent reviews | PID-based lock file with stale lock detection |
 | Infinite loops | Max 30 passes + no-fix detection (breaks after 2 consecutive failures) |
-| Secret exposure | TruffleHog detects secrets; scan runs in Docker sandbox |
 
 ## Troubleshooting
 

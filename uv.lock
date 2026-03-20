@@ -320,7 +320,7 @@ wheels = [
 
 [[package]]
 name = "rechecker-plugin"
-version = "2.0.14"
+version = "2.0.15"
 source = { editable = "." }
 
 [package.optional-dependencies]

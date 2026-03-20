@@ -103,14 +103,14 @@ def main() -> None:
 
     # Parse optional args (7+): agent file path and flags
     agent_file = str(Path(plugin_root) / "agents" / "code-reviewer.md")
-    skip_scan = False
+    is_func_review = False
     original_commit = ""
     extra_args = sys.argv[7:]
     i = 0
     while i < len(extra_args):
         arg = extra_args[i]
-        if arg == "--skip-scan":
-            skip_scan = True
+        if arg == "--func-review":
+            is_func_review = True
         elif arg == "--original-commit" and i + 1 < len(extra_args):
             # Original trigger commit SHA (used by Phase 2 for correct diff base)
             original_commit = extra_args[i + 1]
@@ -189,10 +189,10 @@ def main() -> None:
         # Quote paths for spaces in plugin install directory
         changed_files_gen = f'python3 "{changed_files_script}" {pass_target_sha} .rechecker_changed_files.txt'
         # Commit prefix differs between code-reviewer and functionality-reviewer
-        commit_prefix = "rechecker-func" if skip_scan else "rechecker"
+        commit_prefix = "rechecker-func" if is_func_review else "rechecker"
 
-        # Build prompt conditionally: skip_scan = functionality reviewer (no linters)
-        if skip_scan:
+        # Build prompt conditionally: is_func_review = functionality reviewer (no linters)
+        if is_func_review:
             review_prompt = f"""You are reviewing code in a git worktree. Follow these steps EXACTLY:
 
 STEP 1: Ensure the worktree has the right files checked out:
