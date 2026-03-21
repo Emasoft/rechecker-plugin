@@ -4,9 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Add & to skill command for async execution
+
 ### Miscellaneous Tasks
 
 - Update uv.lock
+## [2.0.25] - 2026-03-21
+
+### Miscellaneous Tasks
+
+- Update uv.lock
+- Bump version to 2.0.25
 
 ### Performance
 
