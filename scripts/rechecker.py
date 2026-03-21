@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """rechecker.py - PostToolUse hook entry point.
 
-Detects git commit commands, acquires lock, invokes review loop.
-Supports multiple git repos in a single command (cd /repo1 && git commit && cd /repo2 && git commit).
-Outputs JSON with additionalContext for the main Claude session.
+Detects git commit commands, forks review to background (non-blocking),
+and returns immediately with a context message.
+Supports multiple git repos in a single compound command.
 """
 
 import json
@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from _shared import check_and_acquire_lock, is_claude_available, run_two_phase_review, setup_lock_cleanup
+from _shared import check_and_acquire_lock, is_claude_available
 
 
 def parse_json_field(data: Any, field_path: str) -> str:
@@ -30,41 +30,25 @@ def parse_json_field(data: Any, field_path: str) -> str:
 
 
 def is_git_commit(command: str) -> bool:
-    """Check if the command contains a real git commit (not --amend).
-
-    Handles compound commands (&&, ;, |).
-    Returns True if a git commit is found and --amend is NOT present.
-    """
-    # If --amend appears ANYWHERE in the full command, reject it entirely.
+    """Check if the command contains a real git commit (not --amend)."""
     if re.search(r"--amend", command):
         return False
-
     parts = re.split(r"&&|;|\|", command)
     for part in parts:
         part = part.strip()
         if re.search(r"\bgit\s+commit\b", part):
             return True
-
     return False
 
 
 def extract_git_commit_dirs(command: str, default_cwd: str) -> list[str]:
-    """Extract all directories where git commit runs in a compound command.
-
-    Tracks cd commands to follow directory changes, then records the effective
-    cwd whenever a git commit is found. Handles:
-    - cd /repo1 && git commit -m "msg"
-    - cd /repo1 && git commit && cd /repo2 && git commit
-    - git commit (uses default_cwd)
-    - cd "/path with spaces" && git commit
-    """
+    """Extract all directories where git commit runs in a compound command."""
     parts = re.split(r"&&|;", command)
     current_cwd = default_cwd
     commit_dirs: list[str] = []
 
     for part in parts:
         part = part.strip()
-        # Track cd commands to follow directory changes
         cd_match = re.match(r'cd\s+("([^"]+)"|\'([^\']+)\'|(\S+))', part)
         if cd_match:
             cd_path = cd_match.group(2) or cd_match.group(3) or cd_match.group(4)
@@ -73,7 +57,6 @@ def extract_git_commit_dirs(command: str, default_cwd: str) -> list[str]:
                 resolved = Path(current_cwd) / resolved
             if resolved.is_dir():
                 current_cwd = str(resolved)
-        # Record cwd when git commit is found
         if re.search(r"\bgit\s+commit\b", part):
             commit_dirs.append(current_cwd)
 
@@ -100,12 +83,10 @@ def check_git_lfs(git_root: str) -> str | None:
         return None
     if "filter=lfs" not in content:
         return None
-    # Repo uses LFS — check if git-lfs is installed
     if not shutil.which("git-lfs"):
         return (
             f"WARNING: {git_root} uses git-lfs but git-lfs is not installed. Large files may not be tracked correctly."
         )
-    # Check if LFS is configured in this repo
     r = subprocess.run(["git", "lfs", "env"], capture_output=True, text=True, cwd=git_root)
     if r.returncode != 0:
         return f"WARNING: {git_root} uses git-lfs but it may not be configured. Run: git lfs install"
@@ -126,32 +107,7 @@ def output_hook_json(context_msg: str) -> None:
     )
 
 
-def review_single_repo(git_root: str, plugin_root: str) -> str:
-    """Run two-phase review on a single git repo. Returns result string."""
-    head_result = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=git_root)
-    commit_sha = head_result.stdout.strip() if head_result.returncode == 0 else ""
-    if not commit_sha:
-        return f"[{git_root}] No HEAD commit found."
-
-    branch_result = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True,
-        text=True,
-        cwd=git_root,
-    )
-    current_branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "main"
-
-    reports_dir = str(Path(git_root) / "reports_dev")
-
-    phase1_result, phase2_result = run_two_phase_review(git_root, commit_sha, current_branch, reports_dir, plugin_root)
-
-    if phase2_result:
-        return f"[Phase 1 - Code Review] {phase1_result}\n[Phase 2 - Functionality Review] {phase2_result}"
-    return phase1_result
-
-
 def main() -> None:
-    # Read hook input from stdin
     raw = sys.stdin.read()
     try:
         hook_input = json.loads(raw)
@@ -162,19 +118,15 @@ def main() -> None:
     command = parse_json_field(hook_input, "tool_input.command")
     project_dir = parse_json_field(hook_input, "cwd")
 
-    # Fallback to env var if cwd not in JSON
     if not project_dir:
         project_dir = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
 
-    # Gate: only process Bash tool calls
     if tool_name != "Bash":
         sys.exit(0)
 
-    # Gate: check if command contains a real git commit
     if not is_git_commit(command):
         sys.exit(0)
 
-    # Gate: verify claude CLI is available
     if not is_claude_available():
         output_hook_json("ERROR: 'claude' CLI not found on PATH. Cannot run automated review.")
         sys.exit(0)
@@ -193,7 +145,6 @@ def main() -> None:
             git_roots.append(root)
             seen_roots.add(root)
 
-    # No git repo found anywhere
     if not git_roots:
         output_hook_json(
             "WARNING: No git repository found. The commit command ran but rechecker "
@@ -201,56 +152,61 @@ def main() -> None:
         )
         sys.exit(0)
 
-    # Resolve plugin root
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", str(Path(__file__).resolve().parent.parent))
+    bg_script = str(Path(plugin_root) / "scripts" / "_background_review.py")
 
-    # Check git-lfs warnings for each repo
+    # Check git-lfs warnings
     warnings: list[str] = []
     for root in git_roots:
         lfs_warning = check_git_lfs(root)
         if lfs_warning:
             warnings.append(lfs_warning)
 
-    # Acquire locks for all repos, track which we acquired
-    acquired_locks: list[Path] = []
-    skipped_repos: list[str] = []
-    reviewable_roots: list[str] = []
+    # Try to acquire locks and launch background reviews
+    launched: list[str] = []
+    skipped: list[str] = []
 
     for root in git_roots:
         lock_file, acquired = check_and_acquire_lock(root)
-        if acquired:
-            setup_lock_cleanup(lock_file)
-            acquired_locks.append(lock_file)
-            reviewable_roots.append(root)
-        else:
-            skipped_repos.append(root)
+        if not acquired:
+            skipped.append(root)
+            continue
 
-    if not reviewable_roots:
-        msg = "Skipped: all repos already have reviews in progress."
-        if warnings:
-            msg = "\n".join(warnings) + "\n" + msg
-        output_hook_json(msg)
-        sys.exit(0)
+        # Lock acquired — fork background review process (non-blocking)
+        # The background process takes over the lock and cleans it up when done
+        rechecker_dir = Path(root) / ".rechecker"
+        rechecker_dir.mkdir(parents=True, exist_ok=True)
+        log_path = rechecker_dir / "background.log"
 
-    # Run reviews for each repo
-    results: list[str] = []
-    for root in reviewable_roots:
-        if len(reviewable_roots) > 1:
-            # Prefix with repo path when reviewing multiple repos
-            result = f"[Repo: {root}]\n{review_single_repo(root, plugin_root)}"
-        else:
-            result = review_single_repo(root, plugin_root)
-        results.append(result)
+        with open(log_path, "w") as log_f:
+            subprocess.Popen(
+                [sys.executable, bg_script, root, plugin_root],
+                stdout=log_f,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                cwd=root,
+            )
 
-    # Combine all results
-    combined_parts: list[str] = []
+        launched.append(root)
+
+    # Build response message (returned immediately, review runs in background)
+    parts: list[str] = []
     if warnings:
-        combined_parts.extend(warnings)
-    if skipped_repos:
-        combined_parts.append(f"Skipped (already reviewing): {', '.join(skipped_repos)}")
-    combined_parts.extend(results)
+        parts.extend(warnings)
+    if launched:
+        repos = ", ".join(Path(r).name for r in launched)
+        parts.append(
+            f"Review started in background for: {repos}. "
+            "Reports will be saved to reports_dev/ when complete. "
+            "Use /recheck to check status or re-run manually."
+        )
+    if skipped:
+        repos = ", ".join(Path(r).name for r in skipped)
+        parts.append(f"Skipped (already reviewing): {repos}")
+    if not launched and not skipped:
+        parts.append("No repos to review.")
 
-    output_hook_json("\n".join(combined_parts))
+    output_hook_json("\n".join(parts))
     sys.exit(0)
 
 
