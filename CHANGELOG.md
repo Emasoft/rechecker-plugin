@@ -6,11 +6,21 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Skill uses default agent, spawns orchestrator explicitly (worktree isolation stays with orchestrator, report cleanup in main context)
+
+### Miscellaneous Tasks
+
+- Update uv.lock
+## [2.0.36] - 2026-03-21
+
+### Bug Fixes
+
 - Skill moves report to reports_dev/ after worktree merge
 
 ### Miscellaneous Tasks
 
 - Update uv.lock
+- Bump version to 2.0.36
 ## [2.0.35] - 2026-03-21
 
 ### Bug Fixes
