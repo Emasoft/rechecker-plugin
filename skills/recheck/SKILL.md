@@ -28,5 +28,10 @@ Copy the following checklist and use it to track the progress and completion of 
 - [ ] Launch the rechecker-orchestrator agent in a named worktree
 - [ ] Confirm the orchestrator has started (check for worktree creation)
 - [ ] When complete, check if the worktree branch was merged (the source fixes are in the commit history)
+- [ ] Move the report to reports_dev/ so it doesn't pollute the repo:
+  ```bash
+  mkdir -p reports_dev && mv rechecker-report-*.md reports_dev/ 2>/dev/null; true
+  ```
+- [ ] Tell the user the report path: `reports_dev/rechecker-report-{TIMESTAMP}.md`
 
 Do not consider the task done until all check points above have been completed.
