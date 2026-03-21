@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Audit — filename consistency, missing mkdir, dead code, report path
+## [2.0.28] - 2026-03-21
+
 ### Documentation
 
 - Complete README rewrite + audit fixes for 4-agent architecture
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.28
 ## [2.0.27] - 2026-03-21
 
 ### Features
