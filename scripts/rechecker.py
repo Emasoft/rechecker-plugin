@@ -94,11 +94,12 @@ def main() -> None:
     # makes ONE commit, then exits. Claude Code merges the worktree.
     for root in git_roots:
         wt_name = f"rechecker-{Path(root).name}"
-        subprocess.run(
+        subprocess.Popen(
             ["claude", "--worktree", wt_name, "--agent", orchestrator, "--dangerously-skip-permissions"],
             cwd=root,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
 
 

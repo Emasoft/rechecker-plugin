@@ -45,9 +45,10 @@ def review_repo(git_root: str, plugin_root: str) -> None:
     orchestrator = str(Path(plugin_root) / "agents" / "recheck-orchestrator.md")
     wt_name = f"rechecker-{Path(git_root).name}"
 
-    subprocess.run(
+    subprocess.Popen(
         ["claude", "--worktree", wt_name, "--agent", orchestrator, "--dangerously-skip-permissions"],
         cwd=git_root,
+        start_new_session=True,
     )
 
 
