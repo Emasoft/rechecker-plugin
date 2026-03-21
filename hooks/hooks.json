@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/check-after-commit.sh",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/rechecker.py",
             "timeout": 86400,
             "async": true
           }
