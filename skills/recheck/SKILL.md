@@ -2,11 +2,9 @@
 name: recheck
 description: recheck the last committed changes
 model: opus[1m]
-context: fork
-agent: rechecker-orchestrator
 ---
 
-Use this skill to trigger a full automated code review of the latest committed changes. The review runs asynchronously in a forked worktree and does not block the main session.
+Use this skill to trigger a full automated code review of the latest committed changes.
 
 The pipeline uses 4 agents in a named worktree:
 - **RO** (rechecker-orchestrator): Opus orchestrator — runs all 4 loops, makes 1 commit
@@ -25,10 +23,8 @@ Flow (1 worktree, 1 commit at the end):
 Copy the following checklist and use it to track the progress and completion of your tasks:
 
 - [ ] Identify the latest commit SHA and the list of changed files
-- [ ] Launch the rechecker-orchestrator agent in a named worktree
-- [ ] Confirm the orchestrator has started (check for worktree creation)
-- [ ] When complete, check if the worktree branch was merged (the source fixes are in the commit history)
-- [ ] Move the report to reports_dev/ so it doesn't pollute the repo:
+- [ ] Spawn the rechecker-orchestrator agent using the Agent tool with `subagent_type: "rechecker-orchestrator"`. The orchestrator has `isolation: worktree` so it will run in a worktree automatically. Wait for it to complete.
+- [ ] After the orchestrator exits and the worktree is merged, move the report to reports_dev/:
   ```bash
   mkdir -p reports_dev && mv rechecker-report-*.md reports_dev/ 2>/dev/null; true
   ```
