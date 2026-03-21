@@ -6,7 +6,25 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Skill must not delete worktrees — Claude Code handles cleanup automatically
+
+### Documentation
+
+- Rewrite README with clear installation, usage, and architecture sections
+
+### Rechecker
+
+- Automated review fixes
+- Automated review fixes
+## [2.0.39] - 2026-03-21
+
+### Bug Fixes
+
 - Use agent name (not file path) for --agent flag, add -p prompt
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.39
 ## [2.0.38] - 2026-03-21
 
 ### Bug Fixes
