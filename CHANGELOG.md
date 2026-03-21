@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Miscellaneous Tasks
+
+- Update uv.lock
+
+### Performance
+
+- Launch claude --worktree async (Popen, non-blocking)
+## [2.0.24] - 2026-03-21
+
 ### Documentation
 
 - Update SKILL.md for 4-agent architecture
@@ -11,6 +20,7 @@ All notable changes to this project will be documented in this file.
 ### Miscellaneous Tasks
 
 - Update uv.lock
+- Bump version to 2.0.24
 ## [2.0.23] - 2026-03-21
 
 ### Features
