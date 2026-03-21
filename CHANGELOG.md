@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Hook silently skips commits when cwd is not the git repo root ([#1](https://github.com//rechecker-plugin/issues/1))
+
+### Miscellaneous Tasks
+
+- Update uv.lock
+## [2.0.16] - 2026-03-20
+
+### Bug Fixes
+
 - Remove stale scan.sh refs, rename skip_scan, clean test artifact
 - CPV validation — 4 of 7 MINOR issues fixed
 - CPV validation — all MAJOR/MINOR fixed (2 remaining are false positives)
@@ -14,6 +23,10 @@ All notable changes to this project will be documented in this file.
 
 - Add find_duplicates and clamp utility functions
 - Replace Docker scan with direct linters + parallel subagent review
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.16
 ## [2.0.15] - 2026-03-20
 
 ### Miscellaneous Tasks
