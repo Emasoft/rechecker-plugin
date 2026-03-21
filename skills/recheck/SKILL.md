@@ -35,7 +35,7 @@ Copy the following checklist and use it to track the progress and completion of 
   ```
 - [ ] **Launch the orchestrator in a worktree**:
   ```bash
-  cd "$(git rev-parse --show-toplevel)" && claude --worktree rechecker-review \
+  cd "$(git rev-parse --show-toplevel)" && claude --worktree "rechecker-$(date +%s)" \
     --agent "rechecker-plugin:rechecker-orchestrator" \
     --dangerously-skip-permissions \
     -p "Run the full recheck pipeline on the latest commit."

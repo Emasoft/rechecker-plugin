@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -155,10 +156,14 @@ def main() -> None:
         sys.exit(0)
 
     _log(f"launching orchestrator for {len(git_roots)} repo(s): {git_roots}")
+    # Flush log NOW so the "launching" entry is visible immediately
+    # (otherwise it only appears after the orchestrator finishes, which can take 30+ min)
+    _flush_log(cwd)
+
     orchestrator = "rechecker-plugin:rechecker-orchestrator"
 
     for root in git_roots:
-        wt_name = f"rechecker-{Path(root).name}"
+        wt_name = f"rechecker-{uuid.uuid4().hex[:8]}"
         cmd = [
             "claude", "--worktree", wt_name,
             "--agent", orchestrator,
@@ -167,6 +172,7 @@ def main() -> None:
         ]
         _log(f"  cmd: {' '.join(cmd)}")
         _log(f"  cwd: {root}")
+        _flush_log(cwd)
 
         reports_dev = Path(root) / "reports_dev"
         reports_dev.mkdir(parents=True, exist_ok=True)
