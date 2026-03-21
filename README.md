@@ -76,7 +76,7 @@ rechecker-plugin/
 +-- hooks/
 |   +-- hooks.json                      # PostToolUse (async) + StopFailure
 +-- agents/
-|   +-- recheck-orchestrator.md         # Opus orchestrator: runs all 4 loops
+|   +-- rechecker-orchestrator.md         # Opus orchestrator: runs all 4 loops
 |   +-- opus-code-reviewer.md           # Opus swarm worker: finds correctness bugs
 |   +-- opus-functionality-reviewer.md  # Opus swarm worker: checks intent vs reality
 |   +-- sonnet-code-fixer.md            # Sonnet swarm worker: applies fixes
@@ -85,7 +85,6 @@ rechecker-plugin/
 |       +-- SKILL.md                    # /recheck: on-demand review (context:fork)
 +-- scripts/
 |   +-- rechecker.py                    # Hook entry point: detect commit, launch orchestrator
-|   +-- changed-files.py               # Generate list of changed files from git commit
 |   +-- log-stop-failure.py             # StopFailure hook: log API errors
 |   +-- scan.sh                         # Optional: Super-Linter + Semgrep + TruffleHog
 |   +-- publish.py                      # Dev tool: bump version, tag, push, release
@@ -97,7 +96,7 @@ rechecker-plugin/
 
 | Agent | Model | Role | Output |
 |-------|-------|------|--------|
-| `recheck-orchestrator` | opus[1m] | Coordinates all 4 loops, spawns swarms, merges reports, makes 1 commit | `rechecker-report.md` |
+| `rechecker-orchestrator` | opus[1m] | Coordinates all 4 loops, spawns swarms, merges reports, makes 1 commit | `rechecker-report.md` |
 | `opus-code-reviewer` | opus[1m] | Reviews one file for correctness bugs (13 categories). Does NOT fix. | JSON findings array |
 | `opus-functionality-reviewer` | opus[1m] | Verifies one file does what it claims (9 categories). Does NOT fix. | JSON findings array |
 | `sonnet-code-fixer` | sonnet | Fixes bugs from a report file. Root-cause fixes, no workarounds. | Edited source files |
@@ -107,7 +106,6 @@ rechecker-plugin/
 | Script | Purpose |
 |--------|---------|
 | `rechecker.py` | Hook entry point. Reads PostToolUse JSON, detects `git commit`, finds git roots, launches orchestrator via `claude --worktree` (Popen, non-blocking) |
-| `changed-files.py` | Generates list of files changed in a commit. Handles first commits, merge commits, excludes deleted files |
 | `log-stop-failure.py` | Logs StopFailure events (rate limits, server errors) for debugging |
 | `scan.sh` | Optional: Runs Super-Linter, Semgrep, TruffleHog via Docker (not used by default) |
 | `publish.py` | Dev tool: test, lint, bump version (including README badge), tag, push, create GitHub release |
@@ -118,7 +116,7 @@ The plugin works out of the box with no configuration. Key defaults:
 
 | Setting | Default | Where |
 |---------|---------|-------|
-| Max passes per loop | 30 | `recheck-orchestrator.md` |
+| Max passes per loop | 30 | `rechecker-orchestrator.md` |
 | Hook timeout | 24 hours | `hooks/hooks.json` |
 | Hook mode | async | `hooks/hooks.json` (`"async": true`) |
 | Reviewer model | opus[1m] | Agent frontmatter |

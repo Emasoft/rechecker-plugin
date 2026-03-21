@@ -26,6 +26,11 @@ Ensure the linters for the type of files that you must check are available in th
 - JavaScript/TypeScript: `npx eslint` (if available)
 - Go: `go vet` (if available)
 
+Create the reports directory before starting:
+```bash
+mkdir -p .rechecker/reports
+```
+
 Then plan and execute the following 6 steps inside the named worktree:
 
 ## Step 1 — [LOOP 1] Initial Linting
@@ -120,17 +125,12 @@ print(f'Report written: rechecker-report.md ({len(all_findings)} issues)')
 ```
 
 Save the report as `rechecker-report.md` in the worktree root.
-Also copy it to `reports_dev/` so it persists after worktree cleanup:
-```bash
-mkdir -p reports_dev && cp rechecker-report.md reports_dev/
-```
 
 ## Step 6 — Commit and Exit
 
-NOW commit everything in one shot (exclude reports and temp files):
+NOW commit all source file fixes in one shot:
 ```bash
-git add -A -- ':!.rechecker' ':!rechecker-report.md'
-git commit -m "rechecker: automated review fixes"
+git add -A && git commit -m "rechecker: automated review fixes"
 ```
 If there are no changes to commit (all files were already clean), skip the commit.
 

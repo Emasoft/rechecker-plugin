@@ -79,7 +79,7 @@ def main() -> None:
         sys.exit(0)
 
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", str(Path(__file__).resolve().parent.parent))
-    orchestrator = str(Path(plugin_root) / "agents" / "recheck-orchestrator.md")
+    orchestrator = str(Path(plugin_root) / "agents" / "rechecker-orchestrator.md")
 
     # Find all git roots where commits happened
     commit_dirs = extract_git_commit_dirs(command, cwd) or [cwd]
