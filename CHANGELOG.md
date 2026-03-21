@@ -6,7 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Final audit — loop refs, crash detection, ephemeral report docs
+## [2.0.31] - 2026-03-21
+
+### Bug Fixes
+
 - Strict file-based protocol — no inline data in prompts
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.31
 ## [2.0.30] - 2026-03-21
 
 ### Bug Fixes
