@@ -13,6 +13,8 @@ All notable changes to this project will be documented in this file.
 ### Miscellaneous Tasks
 
 - Pre-edit snapshot before fixing git detection and worktree isolation
+- Bump version to 2.0.38
+
 ## [2.0.37] - 2026-03-21
 
 ### Bug Fixes
@@ -217,7 +219,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
-- Hook silently skips commits when cwd is not the git repo root ([#1](https://github.com//rechecker-plugin/issues/1))
+- Hook silently skips commits when cwd is not the git repo root ([#1](https://github.com/Emasoft/rechecker-plugin/issues/1))
 
 ### Miscellaneous Tasks
 
