@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Complete 4-agent architecture with skill frontmatter
+## [2.0.26] - 2026-03-21
+
 ### Bug Fixes
 
 - Add & to skill command for async execution
@@ -11,6 +16,7 @@ All notable changes to this project will be documented in this file.
 ### Miscellaneous Tasks
 
 - Update uv.lock
+- Bump version to 2.0.26
 ## [2.0.25] - 2026-03-21
 
 ### Miscellaneous Tasks
