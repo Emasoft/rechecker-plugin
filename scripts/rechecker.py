@@ -199,7 +199,7 @@ def main() -> None:
     if not shutil.which("claude"):
         sys.exit(0)
 
-    _log(f"--- hook fired ---")
+    _log("--- hook fired ---")
     _log(f"cwd={cwd}")
     _log(f"command={command[:200]}")
 
@@ -222,10 +222,10 @@ def main() -> None:
         head = get_head_sha(root)
         _log(f"  {root}: HEAD={head[:8] if head else 'None'}")
         if check_new_commit(root):
-            _log(f"  -> NEW COMMIT, will review")
+            _log("  -> NEW COMMIT, will review")
             roots_to_review.append(root)
         else:
-            _log(f"  -> already reviewed or no commit")
+            _log("  -> already reviewed or no commit")
 
     if not roots_to_review:
         _flush_log(cwd)
