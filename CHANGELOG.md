@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Use agent name (not file path) for --agent flag, add -p prompt
+## [2.0.38] - 2026-03-21
+
+### Bug Fixes
+
 - Robust git detection for submodules, subdirs, and missing repos
 - Skill must cd to git root before launching claude --worktree
 - Use inline $(git rev-parse --show-toplevel) instead of placeholder variable in skill
@@ -13,6 +18,7 @@ All notable changes to this project will be documented in this file.
 ### Miscellaneous Tasks
 
 - Pre-edit snapshot before fixing git detection and worktree isolation
+- Bump version to 2.0.38
 ## [2.0.37] - 2026-03-21
 
 ### Bug Fixes
