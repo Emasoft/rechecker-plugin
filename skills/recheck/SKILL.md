@@ -1,62 +1,32 @@
 ---
 name: recheck
-description: >
-  Trigger with /recheck. Use when you want to manually review code changes.
-  Launches the 4-agent review pipeline in a worktree: lint, code review,
-  functionality review, final lint — all with parallel subagent swarms.
+description: recheck the last committed changes
+model: opus[1m]
+context: fork
+agent: rechecker-orchestrator
 ---
 
-# Recheck - On-Demand Code Review
+Use this skill to trigger a full automated code review of the latest committed changes. The review runs asynchronously in a forked worktree and does not block the main session.
 
-## Overview
+The pipeline uses 4 agents in a named worktree:
+- **RO** (rechecker-orchestrator): Opus orchestrator — runs all 4 loops, makes 1 commit
+- **OCR** (opus-code-reviewer): Opus swarm worker — finds correctness bugs
+- **OFR** (opus-functionality-reviewer): Opus swarm worker — checks intent vs reality
+- **SCF** (sonnet-code-fixer): Sonnet swarm worker — applies fixes
 
-Trigger the rechecker pipeline manually. Without args, scans for all git repos with commits in the last 24h and reviews each. With a commit SHA, reviews that specific commit.
+Flow (1 worktree, 1 commit at the end):
+1. Loop 1: lint → sonnet fixes → repeat until 0 lint issues
+2. Loop 2: opus finds bugs → sonnet fixes → repeat until 0 bugs
+3. Loop 3: opus checks intent → sonnet fixes → repeat until 0 intent issues
+4. Loop 4: final lint → sonnet fixes → repeat until 0 lint issues
+5. Merge reports into single output
+6. Commit → exit → Claude Code merges worktree
 
-Uses 4 agents: recheck-orchestrator (opus), opus-code-reviewer, opus-functionality-reviewer, sonnet-code-fixer.
+Copy the following checklist and use it to track the progress and completion of your tasks:
 
-## Prerequisites
+- [ ] Identify the latest commit SHA and the list of changed files
+- [ ] Launch the rechecker-orchestrator agent in a named worktree
+- [ ] Confirm the orchestrator has started (check for worktree creation)
+- [ ] When complete, read the final merged report from the worktree
 
-- `claude` CLI on PATH
-- `python3` on PATH
-- Git repository with at least one commit
-
-## Instructions
-
-1. [ ] Parse the user's request for an optional commit SHA
-2. [ ] Run the recheck script via the Bash tool:
-   ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/recheck.py" <COMMIT_SHA_OR_EMPTY> &
-   ```
-   Replace `<COMMIT_SHA_OR_EMPTY>` with the user-provided commit SHA, or omit it entirely to scan all repos with recent commits.
-   The `&` forks the review to background so you can continue working.
-3. [ ] The review runs asynchronously. Reports will appear in `reports_dev/` when complete.
-
-## Output
-
-- Combined review report in the worktree (committed by the orchestrator)
-- Claude Code auto-merges the worktree back to main when the orchestrator exits
-
-## Error Handling
-
-| Error | Resolution |
-|-------|------------|
-| Worktree creation fails | Check git state, ensure no conflicts |
-| Agent timeout (24h) | Review too complex — check for infinite loops in fixes |
-| Rate limit (429) | Claude Code handles retries automatically |
-
-## Examples
-
-```
-/recheck              # Scan all repos with commits in last 24h
-/recheck abc1234      # Review a specific commit
-/recheck HEAD~3       # Review 3 commits ago
-```
-
-## Resources
-
-- Orchestrator: `agents/recheck-orchestrator.md`
-- Code reviewer: `agents/opus-code-reviewer.md`
-- Functionality reviewer: `agents/opus-functionality-reviewer.md`
-- Code fixer: `agents/sonnet-code-fixer.md`
-- Hook entry point: `scripts/rechecker.py`
-- Skill entry point: `scripts/recheck.py`
+Do not consider the task done until all check points above have been completed.
