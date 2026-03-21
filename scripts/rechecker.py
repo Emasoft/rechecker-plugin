@@ -90,8 +90,8 @@ def main() -> None:
     if not shutil.which("claude"):
         sys.exit(0)
 
-    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", str(Path(__file__).resolve().parent.parent))
-    orchestrator = str(Path(plugin_root) / "agents" / "rechecker-orchestrator.md")
+    # Agent name (not file path) — --agent takes plugin-qualified name
+    orchestrator = "rechecker-plugin:rechecker-orchestrator"
 
     # Find all git roots where commits happened
     commit_dirs = extract_git_commit_dirs(command, cwd) or [cwd]
@@ -113,7 +113,8 @@ def main() -> None:
     for root in git_roots:
         wt_name = f"rechecker-{Path(root).name}"
         subprocess.run(
-            ["claude", "--worktree", wt_name, "--agent", orchestrator, "--dangerously-skip-permissions"],
+            ["claude", "--worktree", wt_name, "--agent", orchestrator, "--dangerously-skip-permissions",
+             "-p", "Run the full recheck pipeline on the latest commit."],
             cwd=root,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

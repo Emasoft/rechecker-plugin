@@ -36,10 +36,11 @@ Copy the following checklist and use it to track the progress and completion of 
 - [ ] **Launch the orchestrator in a worktree**:
   ```bash
   cd "$(git rev-parse --show-toplevel)" && claude --worktree rechecker-review \
-    --agent "${CLAUDE_PLUGIN_ROOT}/agents/rechecker-orchestrator.md" \
-    --dangerously-skip-permissions
+    --agent "rechecker-plugin:rechecker-orchestrator" \
+    --dangerously-skip-permissions \
+    -p "Run the full recheck pipeline on the latest commit."
   ```
-  Wait for it to complete.
+  Note: `--agent` takes the agent NAME (not file path). The `-p` flag provides the initial prompt. Wait for it to complete.
 - [ ] After the orchestrator exits and the worktree is merged, move the report to reports_dev/:
   ```bash
   cd "$(git rev-parse --show-toplevel)" && mkdir -p reports_dev && mv rechecker-report-*.md reports_dev/ 2>/dev/null; true
