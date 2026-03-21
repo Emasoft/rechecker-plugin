@@ -6,7 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Save timestamped report to worktree root (committed + merged to main)
+## [2.0.32] - 2026-03-21
+
+### Bug Fixes
+
 - Final audit — loop refs, crash detection, ephemeral report docs
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.32
 ## [2.0.31] - 2026-03-21
 
 ### Bug Fixes
