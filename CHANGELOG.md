@@ -6,7 +6,25 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Use unique worktree names + flush log before orchestrator launch
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.43
+
+### Testing
+
+- Verify PostToolUse fires for git commit
+- Verify PostToolUse fires for git commit
+## [2.0.43] - 2026-03-21
+
+### Bug Fixes
+
 - Revert to simple git-commit detection + log before all gates
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.43
 ## [2.0.42] - 2026-03-21
 
 ### Bug Fixes
