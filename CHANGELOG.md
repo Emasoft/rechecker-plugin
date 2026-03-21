@@ -6,11 +6,20 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Add diagnostic logging to hook script + try tool_input.cwd
+## [2.0.40] - 2026-03-21
+
+### Bug Fixes
+
 - Skill must not delete worktrees — Claude Code handles cleanup automatically
 
 ### Documentation
 
 - Rewrite README with clear installation, usage, and architecture sections
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.40
 
 ### Rechecker
 
