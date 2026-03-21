@@ -120,13 +120,19 @@ print(f'Report written: rechecker-report.md ({len(all_findings)} issues)')
 ```
 
 Save the report as `rechecker-report.md` in the worktree root.
+Also copy it to `reports_dev/` so it persists after worktree cleanup:
+```bash
+mkdir -p reports_dev && cp rechecker-report.md reports_dev/
+```
 
 ## Step 6 — Commit and Exit
 
-NOW commit everything in one shot:
+NOW commit everything in one shot (exclude reports and temp files):
 ```bash
-git add -A && git commit -m "rechecker: automated review fixes"
+git add -A -- ':!.rechecker' ':!rechecker-report.md'
+git commit -m "rechecker: automated review fixes"
 ```
+If there are no changes to commit (all files were already clean), skip the commit.
 
 Exit. Claude Code will merge the worktree with the main branch automatically.
 
@@ -137,6 +143,7 @@ Exit. Claude Code will merge the worktree with the main branch automatically.
 - **File ownership**: Each subagent gets exclusive files. No overlapping.
 - **Report exchange**: Reviewers write JSON reports to `.rechecker/reports/`. Fixers read those reports to know what to fix. You (RO) coordinate the file paths.
 - **Parallel execution**: Always spawn subagent swarms in parallel (one message, multiple Agent tool calls).
+- **Subagent types**: Use `subagent_type: "opus-code-reviewer"` for OCR, `subagent_type: "opus-functionality-reviewer"` for OFR, `subagent_type: "sonnet-code-fixer"` for SCF. This ensures each subagent loads its agent definition.
 - **Max passes per loop**: 30. If a loop doesn't converge after 30 passes, exit the loop and note it in the report.
 - **No commits until Step 6**: All 4 loops complete before any commit happens.
 - **Report format for reviewers**: Each reviewer must save findings as JSON:

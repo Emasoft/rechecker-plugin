@@ -8,6 +8,7 @@ launches claude --worktree --agent for each. Runs async (hooks.json).
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -71,6 +72,10 @@ def main() -> None:
     if re.search(r"--amend", command):
         sys.exit(0)
     if not any(re.search(r"\bgit\s+commit\b", p) for p in re.split(r"&&|;|\|", command)):
+        sys.exit(0)
+
+    # Gate: verify claude CLI is available
+    if not shutil.which("claude"):
         sys.exit(0)
 
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", str(Path(__file__).resolve().parent.parent))
