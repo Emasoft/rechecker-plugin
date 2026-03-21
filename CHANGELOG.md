@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Documentation
+
+- Complete README rewrite + audit fixes for 4-agent architecture
+## [2.0.27] - 2026-03-21
+
 ### Features
 
 - Complete 4-agent architecture with skill frontmatter
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.27
 ## [2.0.26] - 2026-03-21
 
 ### Bug Fixes
