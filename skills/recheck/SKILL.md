@@ -25,11 +25,11 @@ Uses 4 agents: recheck-orchestrator (opus), opus-code-reviewer, opus-functionali
 1. [ ] Parse the user's request for an optional commit SHA
 2. [ ] Run the recheck script via the Bash tool:
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/recheck.py" <COMMIT_SHA_OR_EMPTY>
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/recheck.py" <COMMIT_SHA_OR_EMPTY> &
    ```
-   Replace `<COMMIT_SHA_OR_EMPTY>` with the user-provided commit SHA, or omit it entirely to scan all repos with recent commits
-3. [ ] Wait for the script to complete
-4. [ ] Read the report in `reports_dev/`
+   Replace `<COMMIT_SHA_OR_EMPTY>` with the user-provided commit SHA, or omit it entirely to scan all repos with recent commits.
+   The `&` forks the review to background so you can continue working.
+3. [ ] The review runs asynchronously. Reports will appear in `reports_dev/` when complete.
 
 ## Output
 
