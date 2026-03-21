@@ -6,7 +6,20 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Move report to reports_dev/ immediately after worktree merge (not next run)
+
+### Miscellaneous Tasks
+
+- Update uv.lock
+## [2.0.34] - 2026-03-21
+
+### Bug Fixes
+
 - Auto-move old rechecker reports to reports_dev/ on next hook run
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.34
 ## [2.0.33] - 2026-03-21
 
 ### Bug Fixes
