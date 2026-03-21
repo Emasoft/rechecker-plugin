@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- 4-agent architecture with single-commit worktree
+## [2.0.22] - 2026-03-21
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.22
+
 ### Refactor
 
 - Lint once at start+end, remove dead orchestration scripts
