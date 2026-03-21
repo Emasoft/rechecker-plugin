@@ -46,31 +46,59 @@ Collect all lint errors. If any found:
 
 ## Step 2 — [LOOP 2] Code Correctness Review
 
-Launch a swarm of OCR subagents (one per file or file group, `model: "opus"`, parallel).
-Each OCR receives: the file path(s), and instructions to read the full file and report bugs.
-Each OCR returns a JSON report file saved to `.rechecker/reports/ocr-pass{N}-{filename}.json`.
-Collect all reports. Count total issues.
+**Pass N:**
 
-If issues > 0:
-- Launch a swarm of SCF subagents (one per file with issues, `model: "sonnet"`, parallel).
-- Each SCF receives: the file path and the path to the OCR report file for that file.
-- After SCF completes, launch a new OCR swarm to re-check the fixed files.
-- Repeat until OCR swarm finds 0 issues across all files.
+1. Launch a swarm of OCR subagents (one per file or file group, `model: "opus"`, parallel).
+   Each OCR prompt must include the file path(s) to review. Example prompt:
+   ```
+   Review this file for bugs: src/utils.py
+   Read the full file and return ONLY a JSON array of findings.
+   ```
+   Each OCR **returns its findings as text** in the Agent response (a JSON array string).
+
+2. **You (RO) collect** all OCR responses. Parse the JSON arrays. Count total issues.
+   Save the combined findings to `.rechecker/reports/ocr-pass{N}.json` for the final report.
+
+3. If total issues == 0 → exit loop, go to Step 3.
+
+4. Launch a swarm of SCF subagents (one per file with issues, `model: "sonnet"`, parallel).
+   Each SCF prompt must include the file path AND the bug list **inline in the prompt**:
+   ```
+   Fix these bugs in src/utils.py:
+   [{"file":"src/utils.py","line":42,"severity":"critical","description":"division by zero"}]
+   ```
+   SCF subagents edit the files directly and return a summary of what they fixed.
+
+5. Increment N. Go back to step 1. Max 30 passes.
 
 **DO NOT COMMIT.**
 
 ## Step 3 — [LOOP 3] Functionality Review
 
-Launch a swarm of OFR subagents (one per file or file group, `model: "opus"`, parallel).
-Each OFR receives: the file path(s), the commit message, and instructions to verify intent vs reality.
-Each OFR returns a JSON report file saved to `.rechecker/reports/ofr-pass{N}-{filename}.json`.
-Collect all reports. Count total issues.
+**Pass N:**
 
-If issues > 0:
-- Launch a swarm of SCF subagents (one per file with issues, `model: "sonnet"`, parallel).
-- Each SCF receives: the file path and the path to the OFR report file for that file.
-- After SCF completes, launch a new OFR swarm to re-check the fixed files.
-- Repeat until OFR swarm finds 0 issues across all files.
+1. Launch a swarm of OFR subagents (one per file or file group, `model: "opus"`, parallel).
+   Each OFR prompt must include the file path(s) and the commit message. Example prompt:
+   ```
+   Verify this file does what it claims: src/utils.py
+   Commit message: "feat: add safe_divide and parse_config"
+   Read the full file and return ONLY a JSON array of findings.
+   ```
+   Each OFR **returns its findings as text** in the Agent response.
+
+2. **You (RO) collect** all OFR responses. Parse the JSON arrays. Count total issues.
+   Save the combined findings to `.rechecker/reports/ofr-pass{N}.json` for the final report.
+
+3. If total issues == 0 → exit loop, go to Step 4.
+
+4. Launch a swarm of SCF subagents (one per file with issues, `model: "sonnet"`, parallel).
+   Each SCF prompt must include the file path AND the findings **inline in the prompt**:
+   ```
+   Fix these issues in src/utils.py:
+   [{"file":"src/utils.py","line":7,"severity":"critical","intent":"safely divide","reality":"raises ZeroDivisionError"}]
+   ```
+
+5. Increment N. Go back to step 1. Max 30 passes.
 
 **DO NOT COMMIT.**
 
@@ -141,9 +169,10 @@ Exit. Claude Code will merge the worktree with the main branch automatically.
 ## Orchestration Rules
 
 - **File ownership**: Each subagent gets exclusive files. No overlapping.
-- **Report exchange**: Reviewers write JSON reports to `.rechecker/reports/`. Fixers read those reports to know what to fix. You (RO) coordinate the file paths.
+- **Data flow**: Reviewers (OCR/OFR) return findings as JSON text in their Agent response. You (RO) parse the JSON, then pass the findings **inline in the prompt** to fixer (SCF) subagents. No file exchange between subagents — everything flows through you.
+- **Report persistence**: After each loop pass, YOU save the combined findings to `.rechecker/reports/` for the final merged report. Subagents don't write report files.
 - **Parallel execution**: Always spawn subagent swarms in parallel (one message, multiple Agent tool calls).
-- **Subagent types**: Use `subagent_type: "opus-code-reviewer"` for OCR, `subagent_type: "opus-functionality-reviewer"` for OFR, `subagent_type: "sonnet-code-fixer"` for SCF. This ensures each subagent loads its agent definition.
+- **Subagent types**: Use `subagent_type: "opus-code-reviewer"` for OCR, `subagent_type: "opus-functionality-reviewer"` for OFR, `subagent_type: "sonnet-code-fixer"` for SCF.
 - **Max passes per loop**: 30. If a loop doesn't converge after 30 passes, exit the loop and note it in the report.
 - **No commits until Step 6**: All 4 loops complete before any commit happens.
 - **Report format for reviewers**: Each reviewer must save findings as JSON:

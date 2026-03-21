@@ -9,8 +9,7 @@ You are a code fixer. You are specialized in correcting and resolving the bugs r
 
 When invoked, you must do the following:
 
-1. Read the list of files assigned to you and the path to the bug report (provided in your prompt).
-2. Read the bug report JSON file. It contains an array of findings:
+1. Read the file path and the bug list provided **inline in your prompt**. The bugs are a JSON array:
    ```json
    [{"file": "path/to/file.py", "line": 42, "severity": "critical", "description": "..."}]
    ```

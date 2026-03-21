@@ -30,14 +30,14 @@ When invoked, you must follow the following protocol:
    - **Integration drift**: code calls APIs with wrong arguments, uses stale module names
    - **Assumption violations**: code assumes preconditions that callers don't guarantee
 5. For each issue found, record it with file path, line number, severity, what the code should do (intent), and what it actually does (reality).
-6. Save your findings as a JSON file at the path specified in your prompt:
+6. Return your findings as a JSON array **in your response text**. This is your ONLY output:
    ```json
    [
      {"file": "path/to/file.py", "line": 7, "severity": "critical", "intent": "safely divide a by b, returning 0 on division by zero", "reality": "raises ZeroDivisionError when b==0"},
      {"file": "path/to/file.py", "line": 14, "severity": "major", "intent": "parse KEY=VALUE config lines", "reality": "crashes on lines without = character"}
    ]
    ```
-   If no issues found, save an empty array: `[]`
+   If no issues found, return: `[]`
 
 **Do NOT fix anything.** Your job is to find discrepancies between intent and reality, not to fix them. The sonnet-code-fixer agent will handle fixes based on your report.
 
