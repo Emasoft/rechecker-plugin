@@ -1,21 +1,25 @@
 ---
 name: recheck
 description: >
-  Trigger with /recheck. Use when you want to manually review a specific
-  commit or re-check the latest changes. Same two-phase pipeline as the hook.
+  Trigger with /recheck. Use when you want to manually review code changes.
+  Launches the 4-agent review pipeline in a worktree: lint, code review,
+  functionality review, final lint — all with parallel subagent swarms.
 ---
 
 # Recheck - On-Demand Code Review
 
 ## Overview
 
-Trigger the rechecker review loop manually on the latest commit (or a specified commit). Runs the same two-phase pipeline (code review + functionality review) that fires automatically after git commits.
+Trigger the rechecker pipeline manually. Without args, scans for all git repos with commits in the last 24h and reviews each. With a commit SHA, reviews that specific commit.
+
+Uses 4 agents: recheck-orchestrator (opus), opus-code-reviewer, opus-functionality-reviewer, sonnet-code-fixer.
 
 ## Prerequisites
 
-- `claude` CLI on PATH (runs the review agent in headless mode)
+- `claude` CLI on PATH
 - `python3` on PATH
 - Git repository with at least one commit
+
 ## Instructions
 
 1. [ ] Parse the user's request for an optional commit SHA
@@ -23,37 +27,36 @@ Trigger the rechecker review loop manually on the latest commit (or a specified 
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/recheck.py" <COMMIT_SHA_OR_EMPTY>
    ```
-   Replace `<COMMIT_SHA_OR_EMPTY>` with the user-provided commit SHA, or omit it entirely to review HEAD
-3. [ ] Wait for the script to complete (may take several minutes for large diffs)
-4. [ ] Read the summary report file mentioned in the output to get the full results
+   Replace `<COMMIT_SHA_OR_EMPTY>` with the user-provided commit SHA, or omit it entirely to scan all repos with recent commits
+3. [ ] Wait for the script to complete
+4. [ ] Read the report in `reports_dev/`
 
 ## Output
 
-- Per-pass review reports: `reports_dev/rechecker_<ts>_pass<N>.md`
-- Final summary: `reports_dev/rechecker_<ts>_summary.md`
-- Exit code 0 on success, non-zero on failure
+- Combined review report in the worktree (committed by the orchestrator)
+- Claude Code auto-merges the worktree back to main when the orchestrator exits
 
 ## Error Handling
 
 | Error | Resolution |
 |-------|------------|
-| Lock file exists | Another review is running — wait or check for stale lock |
-| Docker not available | Scan step skipped, manual review continues |
 | Worktree creation fails | Check git state, ensure no conflicts |
 | Agent timeout (24h) | Review too complex — check for infinite loops in fixes |
-| Rate limit (429) | Auto-retries 3x with 30/60/90s backoff |
+| Rate limit (429) | Claude Code handles retries automatically |
 
 ## Examples
 
 ```
-/recheck              # Review the latest commit on the current branch
+/recheck              # Scan all repos with commits in last 24h
 /recheck abc1234      # Review a specific commit
 /recheck HEAD~3       # Review 3 commits ago
 ```
 
 ## Resources
 
-- Phase 1 agent: `agents/code-reviewer.md`
-- Phase 2 agent: `agents/functionality-reviewer.md`
+- Orchestrator: `agents/recheck-orchestrator.md`
+- Code reviewer: `agents/opus-code-reviewer.md`
+- Functionality reviewer: `agents/opus-functionality-reviewer.md`
+- Code fixer: `agents/sonnet-code-fixer.md`
 - Hook entry point: `scripts/rechecker.py`
-- Core review loop: `scripts/review-loop.py`
+- Skill entry point: `scripts/recheck.py`
