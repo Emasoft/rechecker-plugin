@@ -6,7 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Auto-move old rechecker reports to reports_dev/ on next hook run
+## [2.0.33] - 2026-03-21
+
+### Bug Fixes
+
 - Save timestamped report to worktree root (committed + merged to main)
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.33
 ## [2.0.32] - 2026-03-21
 
 ### Bug Fixes
