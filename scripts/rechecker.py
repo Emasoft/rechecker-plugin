@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """rechecker.py - PostToolUse hook entry point.
 
-Detects git commit commands, forks review to background (non-blocking),
-and returns immediately with a context message.
+Detects git commit commands, runs two-phase review for each git repo found.
+The hook runs async (configured in hooks.json) so it doesn't block the main session.
 Supports multiple git repos in a single compound command.
 """
 
@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from _shared import check_and_acquire_lock, is_claude_available
+from _shared import check_and_acquire_lock, is_claude_available, run_two_phase_review, setup_lock_cleanup
 
 
 def parse_json_field(data: Any, field_path: str) -> str:
@@ -107,6 +107,29 @@ def output_hook_json(context_msg: str) -> None:
     )
 
 
+def review_single_repo(git_root: str, plugin_root: str) -> str:
+    """Run two-phase review on a single git repo. Returns result string."""
+    head_result = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=git_root)
+    commit_sha = head_result.stdout.strip() if head_result.returncode == 0 else ""
+    if not commit_sha:
+        return f"[{git_root}] No HEAD commit found."
+
+    branch_result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True,
+        text=True,
+        cwd=git_root,
+    )
+    current_branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "main"
+    reports_dir = str(Path(git_root) / "reports_dev")
+
+    phase1_result, phase2_result = run_two_phase_review(git_root, commit_sha, current_branch, reports_dir, plugin_root)
+
+    if phase2_result:
+        return f"[Phase 1 - Code Review] {phase1_result}\n[Phase 2 - Functionality Review] {phase2_result}"
+    return phase1_result
+
+
 def main() -> None:
     raw = sys.stdin.read()
     try:
@@ -153,7 +176,6 @@ def main() -> None:
         sys.exit(0)
 
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", str(Path(__file__).resolve().parent.parent))
-    bg_script = str(Path(plugin_root) / "scripts" / "_background_review.py")
 
     # Check git-lfs warnings
     warnings: list[str] = []
@@ -162,8 +184,8 @@ def main() -> None:
         if lfs_warning:
             warnings.append(lfs_warning)
 
-    # Try to acquire locks and launch background reviews
-    launched: list[str] = []
+    # Acquire locks and run reviews for each repo
+    results: list[str] = []
     skipped: list[str] = []
 
     for root in git_roots:
@@ -171,42 +193,23 @@ def main() -> None:
         if not acquired:
             skipped.append(root)
             continue
+        setup_lock_cleanup(lock_file)
 
-        # Lock acquired — fork background review process (non-blocking)
-        # The background process takes over the lock and cleans it up when done
-        rechecker_dir = Path(root) / ".rechecker"
-        rechecker_dir.mkdir(parents=True, exist_ok=True)
-        log_path = rechecker_dir / "background.log"
+        if len(git_roots) > 1:
+            result = f"[Repo: {root}]\n{review_single_repo(root, plugin_root)}"
+        else:
+            result = review_single_repo(root, plugin_root)
+        results.append(result)
 
-        with open(log_path, "w") as log_f:
-            subprocess.Popen(
-                [sys.executable, bg_script, root, plugin_root],
-                stdout=log_f,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-                cwd=root,
-            )
-
-        launched.append(root)
-
-    # Build response message (returned immediately, review runs in background)
-    parts: list[str] = []
+    # Combine all results
+    combined_parts: list[str] = []
     if warnings:
-        parts.extend(warnings)
-    if launched:
-        repos = ", ".join(Path(r).name for r in launched)
-        parts.append(
-            f"Review started in background for: {repos}. "
-            "Reports will be saved to reports_dev/ when complete. "
-            "Use /recheck to check status or re-run manually."
-        )
+        combined_parts.extend(warnings)
     if skipped:
-        repos = ", ".join(Path(r).name for r in skipped)
-        parts.append(f"Skipped (already reviewing): {repos}")
-    if not launched and not skipped:
-        parts.append("No repos to review.")
+        combined_parts.append(f"Skipped (already reviewing): {', '.join(skipped)}")
+    combined_parts.extend(results)
 
-    output_hook_json("\n".join(parts))
+    output_hook_json("\n".join(combined_parts))
     sys.exit(0)
 
 
