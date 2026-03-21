@@ -128,8 +128,10 @@ for i, f in enumerate(findings, 1):
     r += f'### {i}. {f.get(\"file\",\"?\")}:{f.get(\"line\",\"?\")}\n'
     r += f'- **Severity**: {f.get(\"severity\",\"?\")}\n'
     r += f'- **Description**: {f.get(\"description\", f.get(\"intent\",\"?\"))}\n\n'
-Path('.rechecker/rechecker-report.md').write_text(r)
-print(f'Report: .rechecker/rechecker-report.md ({len(findings)} issues)')
+ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+fname = f'rechecker-report-{ts}.md'
+Path(fname).write_text(r)
+print(f'Report: {fname} ({len(findings)} issues)')
 "
 ```
 
@@ -160,7 +162,7 @@ If no changes to commit (code was already clean), skip the commit. Exit.
 - [ ] Loop 2 complete: 0 code correctness issues
 - [ ] Loop 3 complete: 0 functionality issues
 - [ ] Loop 4 complete: 0 lint errors (final)
-- [ ] Merged reports into `.rechecker/rechecker-report.md`
+- [ ] Merged reports into `rechecker-report-{TIMESTAMP}.md` (worktree root — gets committed and merged)
 - [ ] Single commit created (or skipped if clean)
 
 Copy this checklist and use it to track progress.

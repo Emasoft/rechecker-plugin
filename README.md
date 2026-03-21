@@ -96,7 +96,7 @@ rechecker-plugin/
 
 | Agent | Model | Role | Output |
 |-------|-------|------|--------|
-| `rechecker-orchestrator` | opus[1m] | Coordinates all 4 loops, spawns swarms, merges reports, makes 1 commit | `rechecker-report.md` |
+| `rechecker-orchestrator` | opus[1m] | Coordinates all 4 loops, spawns swarms, merges reports, makes 1 commit | `rechecker-report-{TIMESTAMP}.md` |
 | `opus-code-reviewer` | opus[1m] | Reviews one file for correctness bugs (13 categories). Does NOT fix. | JSON findings array |
 | `opus-functionality-reviewer` | opus[1m] | Verifies one file does what it claims (9 categories). Does NOT fix. | JSON findings array |
 | `sonnet-code-fixer` | sonnet | Fixes bugs from a report file. Root-cause fixes, no workarounds. | Edited source files |
@@ -172,7 +172,7 @@ claude plugin install --source github Emasoft/rechecker-plugin
 | Git state corruption | All work in isolated worktree; merged once at end |
 | Infinite loops | Max 30 passes per loop; orchestrator tracks progress |
 | Concurrent reviews | Each git root gets its own named worktree |
-| Report pollution | Reports go to `.rechecker/` (gitignored); not committed |
+| Final report | `rechecker-report.md` committed + merged to main. Intermediate reports in `.rechecker/` (gitignored) |
 
 ## License
 
