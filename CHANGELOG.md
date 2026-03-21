@@ -6,8 +6,17 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Revert to simple git-commit detection + log before all gates
+## [2.0.42] - 2026-03-21
+
+### Bug Fixes
+
 - Detect commits by HEAD tracking, not command text parsing
 - Remove extraneous f-string prefixes from log calls
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.42
 ## [2.0.41] - 2026-03-21
 
 ### Bug Fixes
