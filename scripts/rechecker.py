@@ -94,6 +94,13 @@ def main() -> None:
     if not git_roots:
         sys.exit(0)
 
+    # Move any previous rechecker reports to reports_dev/ (cleanup from last run)
+    for root in git_roots:
+        reports_dev = Path(root) / "reports_dev"
+        for old_report in Path(root).glob("rechecker-report-*.md"):
+            reports_dev.mkdir(parents=True, exist_ok=True)
+            old_report.rename(reports_dev / old_report.name)
+
     # Launch the orchestrator in a named worktree for each git root.
     # The orchestrator runs all 4 loops (lint→code review→func review→final lint),
     # makes ONE commit, then exits. Claude Code merges the worktree.

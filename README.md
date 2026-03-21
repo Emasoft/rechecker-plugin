@@ -172,7 +172,7 @@ claude plugin install --source github Emasoft/rechecker-plugin
 | Git state corruption | All work in isolated worktree; merged once at end |
 | Infinite loops | Max 30 passes per loop; orchestrator tracks progress |
 | Concurrent reviews | Each git root gets its own named worktree |
-| Final report | `rechecker-report.md` committed + merged to main. Intermediate reports in `.rechecker/` (gitignored) |
+| Final report | `rechecker-report-{TS}.md` committed + merged, then auto-moved to `reports_dev/` on next run |
 
 ## License
 
