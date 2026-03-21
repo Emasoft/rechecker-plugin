@@ -41,20 +41,12 @@ def has_recent_commits(git_root: str, max_age_hours: int = 24) -> str | None:
 
 
 def review_repo(git_root: str, plugin_root: str) -> None:
-    """Run both agents sequentially in a shared named worktree."""
-    code_reviewer = str(Path(plugin_root) / "agents" / "code-reviewer.md")
-    func_reviewer = str(Path(plugin_root) / "agents" / "functionality-reviewer.md")
+    """Launch the orchestrator in a named worktree. It runs all 4 loops internally."""
+    orchestrator = str(Path(plugin_root) / "agents" / "recheck-orchestrator.md")
     wt_name = f"rechecker-{Path(git_root).name}"
 
-    print("  Phase 1: code review...")
     subprocess.run(
-        ["claude", "--worktree", wt_name, "--agent", code_reviewer, "--dangerously-skip-permissions"],
-        cwd=git_root,
-    )
-
-    print("  Phase 2: functionality review...")
-    subprocess.run(
-        ["claude", "--worktree", wt_name, "--agent", func_reviewer, "--dangerously-skip-permissions"],
+        ["claude", "--worktree", wt_name, "--agent", orchestrator, "--dangerously-skip-permissions"],
         cwd=git_root,
     )
 
