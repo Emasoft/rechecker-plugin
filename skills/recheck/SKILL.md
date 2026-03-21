@@ -22,8 +22,15 @@ Flow (1 worktree, 1 commit at the end):
 
 Copy the following checklist and use it to track the progress and completion of your tasks:
 
-- [ ] Identify the latest commit SHA and the list of changed files
-- [ ] Spawn the rechecker-orchestrator agent using the Agent tool with `subagent_type: "rechecker-orchestrator"`. The orchestrator has `isolation: worktree` so it will run in a worktree automatically. Wait for it to complete.
+- [ ] **Pre-check: verify git repo**. Run `git rev-parse --show-toplevel` via Bash. If it fails, tell the user "Not in a git repository — rechecker requires git" and STOP. Store the git root path.
+- [ ] Identify the latest commit SHA (`git log -1 --format=%H`) and the list of changed files (`git show --name-only --format= --diff-filter=d HEAD`)
+- [ ] **Launch the orchestrator in a worktree** by running via Bash:
+  ```bash
+  claude --worktree rechecker-review \
+    --agent "${CLAUDE_PLUGIN_ROOT}/agents/rechecker-orchestrator.md" \
+    --dangerously-skip-permissions
+  ```
+  This runs the orchestrator in an isolated worktree. Wait for it to complete (the hook is NOT async here — the skill waits for results).
 - [ ] After the orchestrator exits and the worktree is merged, move the report to reports_dev/:
   ```bash
   mkdir -p reports_dev && mv rechecker-report-*.md reports_dev/ 2>/dev/null; true

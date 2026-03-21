@@ -2,8 +2,6 @@
 name: rechecker-orchestrator
 description: orchestrate the recheck of the latest committed changes
 model: opus[1m]
-background: true
-isolation: worktree
 ---
 
 You are a code recheck orchestrator. RO for short. When invoked, you must do the following:

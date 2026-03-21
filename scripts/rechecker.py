@@ -47,10 +47,22 @@ def extract_git_commit_dirs(command: str, default_cwd: str) -> list[str]:
 
 
 def find_git_root(start: str) -> str | None:
-    """Walk up from start looking for .git directory."""
+    """Find the git root for start dir. Handles normal repos, submodules (.git file), and nested subdirs."""
+    # Use git rev-parse for robust detection (handles submodules, worktrees, bare repos)
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=start, capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+    # Fallback: walk up looking for .git (directory or file)
     p = Path(start)
     for parent in [p, *p.parents]:
-        if (parent / ".git").is_dir():
+        git_path = parent / ".git"
+        if git_path.is_dir() or git_path.is_file():  # .git file = submodule
             return str(parent)
     return None
 
