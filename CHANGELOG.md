@@ -6,7 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Strict file-based protocol — no inline data in prompts
+## [2.0.30] - 2026-03-21
+
+### Bug Fixes
+
 - Data flow between agents — inline prompt, not file exchange
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.30
 ## [2.0.29] - 2026-03-21
 
 ### Bug Fixes
