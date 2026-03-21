@@ -10,6 +10,16 @@ All notable changes to this project will be documented in this file.
 
 ### Performance
 
+- Two-swarm pattern — opus finds bugs, sonnet fixes them
+## [2.0.19] - 2026-03-21
+
+### Miscellaneous Tasks
+
+- Update uv.lock
+- Bump version to 2.0.19
+
+### Performance
+
 - Switch agents from opus[1m] to sonnet (5-10x faster reviews)
 ## [2.0.18] - 2026-03-21
 
