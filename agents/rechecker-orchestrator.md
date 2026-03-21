@@ -88,7 +88,8 @@ If lint errors found:
 3. If 0 → exit loop, go to Step 3.
 4. Launch SCF swarm (one per file with issues, parallel). Each SCF prompt:
    `"Fix bugs in: {file} — Read findings from: .rechecker/reports/ocr-pass{N}-{SAFE_NAME}.json"`
-5. Increment N. Go to step 1. Max 30 passes. **DO NOT COMMIT.**
+5. **Verify completeness**: You launched M subagents, check you got M report files. If any are missing, note the missing files in the final report (subagent may have crashed).
+6. Increment N. **Repeat from step 1 of this loop.** Max 30 passes. **DO NOT COMMIT.**
 
 ## Step 3 — [LOOP 3] Functionality Review
 
@@ -99,7 +100,8 @@ If lint errors found:
 3. If 0 → exit loop, go to Step 4.
 4. Launch SCF swarm (one per file with issues, parallel). Each SCF prompt:
    `"Fix issues in: {file} — Read findings from: .rechecker/reports/ofr-pass{N}-{SAFE_NAME}.json"`
-5. Increment N. Go to step 1. Max 30 passes. **DO NOT COMMIT.**
+5. **Verify completeness**: Check you got all expected report files.
+6. Increment N. **Repeat from step 1 of this loop.** Max 30 passes. **DO NOT COMMIT.**
 
 ## Step 4 — [LOOP 4] Final Linting
 

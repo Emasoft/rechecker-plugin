@@ -27,6 +27,6 @@ Copy the following checklist and use it to track the progress and completion of 
 - [ ] Identify the latest commit SHA and the list of changed files
 - [ ] Launch the rechecker-orchestrator agent in a named worktree
 - [ ] Confirm the orchestrator has started (check for worktree creation)
-- [ ] When complete, read the final merged report from the worktree
+- [ ] When complete, check if the worktree branch was merged (the source fixes are in the commit history)
 
 Do not consider the task done until all check points above have been completed.
