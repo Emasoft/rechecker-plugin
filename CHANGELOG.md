@@ -6,11 +6,31 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Use hooks.json async:true instead of Popen fork for non-blocking
+
+### Features
+
+- Multi-repo support — detect all git repos from compound commands
+- Non-blocking hook + multi-repo recheck with recent commit scan
+- Simplify hook to direct claude --worktree launch
+
+### Miscellaneous Tasks
+
+- Update uv.lock
+
+### Refactor
+
+- Simplify rechecker to just detect + launch claude --worktree
+## [2.0.17] - 2026-03-21
+
+### Bug Fixes
+
 - Hook silently skips commits when cwd is not the git repo root ([#1](https://github.com//rechecker-plugin/issues/1))
 
 ### Miscellaneous Tasks
 
 - Update uv.lock
+- Bump version to 2.0.17
 ## [2.0.16] - 2026-03-20
 
 ### Bug Fixes
