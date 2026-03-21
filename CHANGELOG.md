@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Miscellaneous Tasks
+
+- Update uv.lock
+
+### Performance
+
+- Switch agents from opus[1m] to sonnet (5-10x faster reviews)
+## [2.0.18] - 2026-03-21
+
 ### Bug Fixes
 
 - Use hooks.json async:true instead of Popen fork for non-blocking
@@ -17,6 +26,7 @@ All notable changes to this project will be documented in this file.
 ### Miscellaneous Tasks
 
 - Update uv.lock
+- Bump version to 2.0.18
 
 ### Refactor
 
