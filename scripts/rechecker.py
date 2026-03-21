@@ -27,6 +27,34 @@ def parse_json_field(data: Any, field_path: str) -> str:
     return str(val) if val else ""
 
 
+def extract_effective_cwd(command: str, default_cwd: str) -> str:
+    """Extract the effective working directory from a compound command.
+
+    Handles patterns like:
+    - cd /path/to/repo && git commit ...
+    - cd /path/to/repo ; git commit ...
+    - cd "/path with spaces/repo" && git commit ...
+    """
+    m = re.match(r'cd\s+("([^"]+)"|\'([^\']+)\'|(\S+))\s*(?:&&|;)', command)
+    if m:
+        cd_path = m.group(2) or m.group(3) or m.group(4)
+        resolved = Path(cd_path).expanduser()
+        if not resolved.is_absolute():
+            resolved = Path(default_cwd) / resolved
+        if resolved.is_dir():
+            return str(resolved)
+    return default_cwd
+
+
+def find_git_root(start: str) -> str | None:
+    """Walk up from start directory looking for a .git directory."""
+    p = Path(start)
+    for parent in [p, *p.parents]:
+        if (parent / ".git").is_dir():
+            return str(parent)
+    return None
+
+
 def is_git_commit(command: str) -> bool:
     """Check if the command contains a real git commit (not --amend).
 
@@ -87,14 +115,23 @@ def main() -> None:
     if not is_git_commit(command):
         sys.exit(0)
 
-    # Gate: verify we are in a git repository
+    # Resolve effective cwd: the Bash command may cd into a subdirectory
+    # before running git commit (e.g., "cd my-plugin && git commit ...")
+    project_dir = extract_effective_cwd(command, project_dir)
+
+    # Gate: verify we are in a git repository (try cwd first, then walk up)
     git_check = subprocess.run(
         ["git", "rev-parse", "--is-inside-work-tree"],
         capture_output=True,
         cwd=project_dir,
     )
     if git_check.returncode != 0:
-        sys.exit(0)
+        # cwd might be a parent of the git repo — walk up to find .git
+        git_root = find_git_root(project_dir)
+        if git_root:
+            project_dir = git_root
+        else:
+            sys.exit(0)
 
     # Gate: verify claude CLI is available (shutil.which handles Windows .exe/.cmd)
     if not is_claude_available():
