@@ -20,24 +20,30 @@ Flow (1 worktree, 1 commit at the end):
 5. Merge reports into single output
 6. Commit → exit → Claude Code merges worktree
 
+All commands use `$(git rev-parse --show-toplevel)` inline to resolve the git root at runtime — no variables to track across steps.
+
 Copy the following checklist and use it to track the progress and completion of your tasks:
 
-- [ ] **Pre-check: find git root**. Run `git rev-parse --show-toplevel` via Bash. If it fails, tell the user "Not in a git repository — rechecker requires git" and STOP. Save the output as `GIT_ROOT` — all subsequent commands must run from this directory.
-- [ ] Identify the latest commit SHA and changed files (run from `GIT_ROOT`):
+- [ ] **Pre-check: verify git repo**. Run this via Bash:
   ```bash
-  cd "<GIT_ROOT>" && git log -1 --format=%H && git show --name-only --format= --diff-filter=d HEAD
+  git rev-parse --show-toplevel
   ```
-- [ ] **Launch the orchestrator in a worktree** by running via Bash (note the `cd` to `GIT_ROOT`):
+  If it fails, tell the user "Not in a git repository — rechecker requires git" and STOP.
+- [ ] Identify the latest commit SHA and changed files:
   ```bash
-  cd "<GIT_ROOT>" && claude --worktree rechecker-review \
+  cd "$(git rev-parse --show-toplevel)" && git log -1 --format=%H && git show --name-only --format= --diff-filter=d HEAD
+  ```
+- [ ] **Launch the orchestrator in a worktree**:
+  ```bash
+  cd "$(git rev-parse --show-toplevel)" && claude --worktree rechecker-review \
     --agent "${CLAUDE_PLUGIN_ROOT}/agents/rechecker-orchestrator.md" \
     --dangerously-skip-permissions
   ```
-  Replace `<GIT_ROOT>` with the actual path from the pre-check. The `cd` is critical — `claude --worktree` must run from the git root. Wait for it to complete.
-- [ ] After the orchestrator exits and the worktree is merged, move the report to reports_dev/ (from `GIT_ROOT`):
+  Wait for it to complete.
+- [ ] After the orchestrator exits and the worktree is merged, move the report to reports_dev/:
   ```bash
-  cd "<GIT_ROOT>" && mkdir -p reports_dev && mv rechecker-report-*.md reports_dev/ 2>/dev/null; true
+  cd "$(git rev-parse --show-toplevel)" && mkdir -p reports_dev && mv rechecker-report-*.md reports_dev/ 2>/dev/null; true
   ```
-- [ ] Tell the user the report path: `<GIT_ROOT>/reports_dev/rechecker-report-{TIMESTAMP}.md`
+- [ ] Tell the user the report path: `reports_dev/rechecker-report-{TIMESTAMP}.md`
 
 Do not consider the task done until all check points above have been completed.
