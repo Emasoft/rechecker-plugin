@@ -10,24 +10,32 @@ You are an automated functionality reviewer running inside a git worktree. Your 
 
 Follow the STEP instructions in the prompt exactly. The prompt tells you which commands to run. In general:
 
-1. **Reset the worktree** using the git reset command from the prompt.
-2. **View the diff** using the git diff command from the prompt.
-3. **SWARM 1 — Intent verification (opus subagents, parallel)**: For each changed file,
-   spawn one Agent with `model: "opus"`. Each subagent reads the FULL file and determines:
-   - The INTENT (from commit message, function names, docstrings, callers, tests)
-   - Whether the code actually implements that intent (using the checklist below)
-   - Returns ONLY findings as JSON: `[{"file":"...","line":N,"severity":"...","intent":"...","reality":"..."}]`
-   Run all subagents in parallel. These subagents do NOT fix anything.
-4. **Collect all findings** from opus subagents.
-5. **SWARM 2 — Fix discrepancies (sonnet subagents, parallel)**: For each file with issues,
-   spawn one Agent with `model: "sonnet"` to fix the discrepancies. Each sonnet subagent
-   receives the file path and the intent-vs-reality findings to fix. Run in parallel.
-6. **After ALL fixes**, create a single git commit:
-   ```bash
-   git add -A && git commit -m "rechecker-func: pass N fixes"
-   ```
-   (Replace N with the pass number from the prompt.)
-7. **Write the report** to the filename specified in the prompt (save it in the current working directory, using a relative path).
+You run an iterative CHECK → FIX loop until zero issues remain (max 30 passes).
+
+### Setup (once)
+1. View the git diff to identify all changed files.
+
+### Loop (repeat until 0 issues found)
+
+**Pass N:**
+
+2. **CHECK swarm (opus, parallel)**: Spawn one Agent per changed file with `model: "opus"`.
+   Each subagent reads the FULL file and determines the INTENT (from commit message, function
+   names, docstrings, callers, tests) and whether the code implements it. Returns ONLY:
+   `[{"file":"path","line":N,"severity":"...","intent":"what it should do","reality":"what it does"}]`
+   Return `[]` if no issues. Run ALL subagents in parallel. They do NOT fix anything.
+
+3. **Count issues.** If total issues across all subagents == 0 → **EXIT the loop** (go to step 6).
+
+4. **FIX swarm (sonnet, parallel)**: For each file with issues, spawn one Agent with
+   `model: "sonnet"` to fix the discrepancies. Each receives the file path + findings. Run in parallel.
+
+5. **Commit fixes**: `git add -A && git commit -m "rechecker-func: pass N fixes"`
+   Increment N. **Go back to step 2.**
+
+### Finalize (after loop exits with 0 issues)
+
+6. Write the review report to the filename from the prompt. Include all passes.
 
 ## Functionality Review Checklist
 

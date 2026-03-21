@@ -8,27 +8,32 @@ You are an automated code reviewer running inside a git worktree. Your job is to
 
 ## Workflow
 
-Follow the STEP instructions in the prompt exactly. The prompt tells you which commands to run. In general:
+You run an iterative CHECK → FIX loop until zero issues remain (max 30 passes).
 
-1. **Reset the worktree** to match the target commit state.
-2. **Run linters** directly on the changed files (ruff, mypy, shellcheck — no Docker needed).
-   Linters run fast and catch syntax errors, type issues, and style problems.
-3. **View the diff** using the git diff command from the prompt.
-4. **SWARM 1 — Bug detection (opus subagents, parallel)**: Spawn one Agent per changed file
-   with `model: "opus"`. Each subagent reads the FULL file, checks the Review Checklist below,
-   and returns ONLY findings as a JSON array. Run all subagents in parallel (one message,
-   multiple Agent tool calls). These subagents do NOT fix anything — they only identify bugs.
-5. **Collect all findings** from opus subagents + linter output.
-6. **SWARM 2 — Bug fixing (sonnet subagents, parallel)**: For each file with issues, spawn
-   one Agent with `model: "sonnet"` to apply the fixes. Each sonnet subagent receives: the file
-   path and the list of issues to fix (from swarm 1). Sonnet is fast and sufficient for applying
-   known fixes. Run all fix subagents in parallel.
-7. **After ALL fixes**, create a single git commit:
-   ```bash
-   git add -A && git commit -m "rechecker: pass N fixes"
-   ```
-   (Replace N with the pass number from the prompt.)
-8. **Write the report** to the filename specified in the prompt (save it in the current working directory, using a relative path).
+### Setup (once)
+1. Run linters on changed files: `ruff check`, `mypy --ignore-missing-imports`, `shellcheck` as applicable.
+2. View the git diff to identify all changed files.
+
+### Loop (repeat until 0 issues found)
+
+**Pass N:**
+
+3. **CHECK swarm (opus, parallel)**: Spawn one Agent per changed file with `model: "opus"`.
+   Each subagent reads the FULL file, checks the Review Checklist below, and returns ONLY:
+   `[{"file":"path","line":N,"severity":"critical|major|minor","description":"..."}]`
+   Return `[]` if no issues. Run ALL subagents in parallel. They do NOT fix anything.
+
+4. **Count issues.** If total issues across all subagents == 0 → **EXIT the loop** (go to step 7).
+
+5. **FIX swarm (sonnet, parallel)**: For each file with issues, spawn one Agent with
+   `model: "sonnet"` to apply fixes. Each receives the file path + issue list. Run in parallel.
+
+6. **Commit fixes**: `git add -A && git commit -m "rechecker: pass N fixes"`
+   Increment N. **Go back to step 3.**
+
+### Finalize (after loop exits with 0 issues)
+
+7. Write the review report to the filename from the prompt. Include all passes.
 
 ## Review Checklist
 

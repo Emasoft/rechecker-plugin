@@ -75,6 +75,7 @@ def main() -> None:
 
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", str(Path(__file__).resolve().parent.parent))
     code_reviewer = str(Path(plugin_root) / "agents" / "code-reviewer.md")
+    func_reviewer = str(Path(plugin_root) / "agents" / "functionality-reviewer.md")
 
     # Find all git roots where commits happened
     commit_dirs = extract_git_commit_dirs(command, cwd) or [cwd]
@@ -89,14 +90,25 @@ def main() -> None:
     if not git_roots:
         sys.exit(0)
 
-    # Launch claude --worktree --agent for each git root
+    # For each git root: Phase 1 (code-reviewer) then Phase 2 (functionality-reviewer)
+    # Both run in the same named worktree. The hook is async so this doesn't block.
     for root in git_roots:
-        subprocess.Popen(
-            ["claude", "--worktree", "rechecker", "--agent", code_reviewer, "--dangerously-skip-permissions"],
+        wt_name = f"rechecker-{Path(root).name}"
+
+        # Phase 1: code review (loops internally until 0 issues)
+        subprocess.run(
+            ["claude", "--worktree", wt_name, "--agent", code_reviewer, "--dangerously-skip-permissions"],
             cwd=root,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            start_new_session=True,
+        )
+
+        # Phase 2: functionality review in same worktree (loops internally until 0 issues)
+        subprocess.run(
+            ["claude", "--worktree", wt_name, "--agent", func_reviewer, "--dangerously-skip-permissions"],
+            cwd=root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
 
