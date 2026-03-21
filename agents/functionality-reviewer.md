@@ -10,12 +10,8 @@ You are an automated functionality reviewer running inside a git worktree. Your 
 
 Follow the STEP instructions in the prompt exactly. The prompt tells you which commands to run. In general:
 
-You run an iterative CHECK → FIX loop until zero issues remain (max 30 passes).
-
-### Setup (once)
+### Functionality review loop (repeat until 0 issues)
 1. View the git diff to identify all changed files.
-
-### Loop (repeat until 0 issues found)
 
 **Pass N:**
 
@@ -25,7 +21,7 @@ You run an iterative CHECK → FIX loop until zero issues remain (max 30 passes)
    `[{"file":"path","line":N,"severity":"...","intent":"what it should do","reality":"what it does"}]`
    Return `[]` if no issues. Run ALL subagents in parallel. They do NOT fix anything.
 
-3. **Count issues.** If total issues across all subagents == 0 → **EXIT the loop** (go to step 6).
+3. **Count issues.** If total == 0 → **EXIT the loop** (go to step 6).
 
 4. **FIX swarm (sonnet, parallel)**: For each file with issues, spawn one Agent with
    `model: "sonnet"` to fix the discrepancies. Each receives the file path + findings. Run in parallel.
@@ -33,9 +29,8 @@ You run an iterative CHECK → FIX loop until zero issues remain (max 30 passes)
 5. **Commit fixes**: `git add -A && git commit -m "rechecker-func: pass N fixes"`
    Increment N. **Go back to step 2.**
 
-### Finalize (after loop exits with 0 issues)
-
-6. Write the review report to the filename from the prompt. Include all passes.
+### Report
+6. Write the review report. Include all passes.
 
 ## Functionality Review Checklist
 
