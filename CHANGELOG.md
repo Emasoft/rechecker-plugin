@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Miscellaneous Tasks
+
+- Update uv.lock
+## [2.0.44] - 2026-03-21
+
 ### Bug Fixes
 
 - Use unique worktree names + flush log before orchestrator launch
@@ -11,6 +16,7 @@ All notable changes to this project will be documented in this file.
 ### Miscellaneous Tasks
 
 - Bump version to 2.0.43
+- Bump version to 2.0.44
 
 ### Testing
 
