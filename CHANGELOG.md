@@ -6,11 +6,21 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Skill moves report to reports_dev/ after worktree merge
+
+### Miscellaneous Tasks
+
+- Update uv.lock
+## [2.0.35] - 2026-03-21
+
+### Bug Fixes
+
 - Move report to reports_dev/ immediately after worktree merge (not next run)
 
 ### Miscellaneous Tasks
 
 - Update uv.lock
+- Bump version to 2.0.35
 ## [2.0.34] - 2026-03-21
 
 ### Bug Fixes
