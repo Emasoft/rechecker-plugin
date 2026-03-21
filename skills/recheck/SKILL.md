@@ -47,4 +47,6 @@ Copy the following checklist and use it to track the progress and completion of 
   ```
 - [ ] Tell the user the report path: `reports_dev/rechecker-report-{TIMESTAMP}.md`
 
+**IMPORTANT**: Do NOT attempt to delete or remove worktrees or worktree branches. Claude Code automatically cleans up worktrees at session end.
+
 Do not consider the task done until all check points above have been completed.
