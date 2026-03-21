@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """rechecker.py - PostToolUse hook entry point.
 
-Detects git commit in Bash commands, finds all git repos involved,
-launches claude --worktree --agent for each. Runs async (hooks.json).
+Detects new commits by tracking HEAD SHA, not by parsing command text.
+This handles the case where PostToolUse doesn't fire for the git commit
+Bash call (e.g., due to PreToolUse hook interactions). The next Bash
+call that DOES fire will catch the new commit.
+
+Runs async (hooks.json "async": true).
 """
 
 import json
@@ -48,33 +52,8 @@ def parse_json_field(data: Any, field_path: str) -> str:
     return str(val) if val else ""
 
 
-def extract_git_commit_dirs(command: str, default_cwd: str) -> list[str]:
-    """Extract all directories where git commit runs in a compound command."""
-    parts = re.split(r"&&|;", command)
-    current_cwd = default_cwd
-    commit_dirs: list[str] = []
-    for part in parts:
-        part = part.strip()
-        cd_match = re.match(r'cd\s+("([^"]+)"|\'([^\']+)\'|(\S+))', part)
-        if cd_match:
-            cd_path = cd_match.group(2) or cd_match.group(3) or cd_match.group(4)
-            resolved = Path(cd_path).expanduser()
-            if not resolved.is_absolute():
-                resolved = Path(default_cwd) / resolved
-            if resolved.is_dir():
-                current_cwd = str(resolved)
-                _log(f"  cd -> {current_cwd}")
-            else:
-                _log(f"  cd target not a dir: {resolved}")
-        if re.search(r"\bgit\s+commit\b", part):
-            commit_dirs.append(current_cwd)
-            _log(f"  git commit detected in: {current_cwd}")
-    return commit_dirs
-
-
 def find_git_root(start: str) -> str | None:
     """Find the git root for start dir. Handles normal repos, submodules (.git file), and nested subdirs."""
-    # Use git rev-parse for robust detection (handles submodules, worktrees, bare repos)
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
@@ -88,88 +67,175 @@ def find_git_root(start: str) -> str | None:
     p = Path(start)
     for parent in [p, *p.parents]:
         git_path = parent / ".git"
-        if git_path.is_dir() or git_path.is_file():  # .git file = submodule
+        if git_path.is_dir() or git_path.is_file():
             return str(parent)
     return None
 
 
+def get_head_sha(git_root: str) -> str | None:
+    """Get the current HEAD SHA for a git repo."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=git_root, capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+    return None
+
+
+def get_commit_message(git_root: str) -> str | None:
+    """Get the commit message of HEAD."""
+    try:
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%s", "HEAD"],
+            cwd=git_root, capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+    return None
+
+
+def discover_git_roots(cwd: str, command: str) -> list[str]:
+    """Find all git repos to check: cwd, cd targets from command, and direct children of cwd."""
+    roots: dict[str, None] = {}  # ordered set
+
+    # 1. cwd itself
+    root = find_git_root(cwd)
+    if root:
+        roots[root] = None
+
+    # 2. Parse cd targets from the command (handles compound commands)
+    current = cwd
+    for part in re.split(r"&&|;", command):
+        part = part.strip()
+        cd_match = re.match(r'cd\s+("([^"]+)"|\'([^\']+)\'|(\S+))', part)
+        if cd_match:
+            cd_path = cd_match.group(2) or cd_match.group(3) or cd_match.group(4)
+            resolved = Path(cd_path).expanduser()
+            if not resolved.is_absolute():
+                resolved = Path(current) / resolved
+            if resolved.is_dir():
+                current = str(resolved)
+                r = find_git_root(current)
+                if r:
+                    roots[r] = None
+
+    # 3. If cwd is NOT a git repo, scan direct children (monorepo with sub-repos)
+    if not root:
+        try:
+            for child in sorted(Path(cwd).iterdir())[:20]:
+                if child.is_dir() and not child.name.startswith("."):
+                    r = find_git_root(str(child))
+                    if r and r not in roots:
+                        roots[r] = None
+        except OSError:
+            pass
+
+    return list(roots)
+
+
+def check_new_commit(git_root: str) -> bool:
+    """Check if git_root has a new, unreviewed commit. Updates state file."""
+    state_file = Path(git_root) / ".rechecker" / "last_sha"
+
+    head = get_head_sha(git_root)
+    if not head:
+        return False
+
+    # Compare to last reviewed SHA
+    try:
+        last = state_file.read_text().strip()
+    except FileNotFoundError:
+        last = ""
+
+    if head == last:
+        return False
+
+    # Skip our own commits
+    msg = get_commit_message(git_root)
+    if msg and msg.startswith("rechecker:"):
+        _log(f"  skip rechecker's own commit: {head[:8]}")
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(head)
+        return False
+
+    # New commit found — mark as reviewed (before launching, to prevent double-launch)
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(head)
+    return True
+
+
 def main() -> None:
     raw = sys.stdin.read()
-    _log(f"--- hook fired (input {len(raw)} bytes) ---")
 
     try:
         hook_input = json.loads(raw)
-    except (json.JSONDecodeError, ValueError) as e:
-        _log(f"JSON parse error: {e}")
-        _flush_log(os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd()))
+    except (json.JSONDecodeError, ValueError):
         sys.exit(0)
 
     tool_name = parse_json_field(hook_input, "tool_name")
     command = parse_json_field(hook_input, "tool_input.command")
-
-    # Resolve cwd: try multiple sources in the hook input, then env, then getcwd
     cwd = (
-        parse_json_field(hook_input, "tool_input.cwd")  # Bash tool may include its tracked cwd
-        or parse_json_field(hook_input, "cwd")           # top-level cwd field
+        parse_json_field(hook_input, "tool_input.cwd")
+        or parse_json_field(hook_input, "cwd")
         or os.environ.get("CLAUDE_PROJECT_DIR", "")
         or os.getcwd()
     )
 
-    _log(f"tool={tool_name} cwd={cwd}")
-    _log(f"command={command[:300]}")
-
-    # Dump all top-level keys for diagnostics (first run only helps us understand the schema)
-    if isinstance(hook_input, dict):
-        _log(f"hook keys: {sorted(hook_input.keys())}")
-
-    # Gate: only Bash with git commit (not --amend)
+    # Gate: only Bash tool
     if tool_name != "Bash":
-        _log("skip: not Bash")
-        _flush_log(cwd)
         sys.exit(0)
+
+    # Gate: skip --amend commands
     if re.search(r"--amend", command):
-        _log("skip: --amend")
-        _flush_log(cwd)
-        sys.exit(0)
-    if not any(re.search(r"\bgit\s+commit\b", p) for p in re.split(r"&&|;|\|", command)):
-        _log("skip: no git commit in command")
-        _flush_log(cwd)
         sys.exit(0)
 
     # Gate: verify claude CLI is available
-    claude_path = shutil.which("claude")
-    if not claude_path:
-        _log("skip: claude CLI not on PATH")
+    if not shutil.which("claude"):
+        sys.exit(0)
+
+    _log(f"--- hook fired ---")
+    _log(f"cwd={cwd}")
+    _log(f"command={command[:200]}")
+
+    # Log hook JSON keys on first run (helps debug schema)
+    if isinstance(hook_input, dict):
+        _log(f"hook keys: {sorted(hook_input.keys())}")
+
+    # Discover all git repos reachable from cwd and command
+    git_roots = discover_git_roots(cwd, command)
+    if not git_roots:
+        _log("no git roots found")
         _flush_log(cwd)
         sys.exit(0)
-    _log(f"claude at: {claude_path}")
 
-    # Agent name (not file path) — --agent takes plugin-qualified name
+    _log(f"git roots: {git_roots}")
+
+    # Check each repo for new unreviewed commits
+    roots_to_review: list[str] = []
+    for root in git_roots:
+        head = get_head_sha(root)
+        _log(f"  {root}: HEAD={head[:8] if head else 'None'}")
+        if check_new_commit(root):
+            _log(f"  -> NEW COMMIT, will review")
+            roots_to_review.append(root)
+        else:
+            _log(f"  -> already reviewed or no commit")
+
+    if not roots_to_review:
+        _flush_log(cwd)
+        sys.exit(0)
+
+    _log(f"launching orchestrator for {len(roots_to_review)} repo(s)")
+
     orchestrator = "rechecker-plugin:rechecker-orchestrator"
 
-    # Find all git roots where commits happened
-    commit_dirs = extract_git_commit_dirs(command, cwd) or [cwd]
-    _log(f"commit_dirs={commit_dirs}")
-
-    git_roots: list[str] = []
-    seen: set[str] = set()
-    for d in commit_dirs:
-        root = find_git_root(d)
-        _log(f"  find_git_root({d}) -> {root}")
-        if root and root not in seen:
-            git_roots.append(root)
-            seen.add(root)
-
-    if not git_roots:
-        _log("skip: no git roots found")
-        _flush_log(cwd)
-        sys.exit(0)
-
-    _log(f"launching orchestrator for {len(git_roots)} repo(s): {git_roots}")
-
-    # Launch the orchestrator in a named worktree for each git root.
-    # Hook is async:true so waiting here doesn't block the main session.
-    for root in git_roots:
+    for root in roots_to_review:
         wt_name = f"rechecker-{Path(root).name}"
         cmd = [
             "claude", "--worktree", wt_name,
@@ -180,7 +246,7 @@ def main() -> None:
         _log(f"  cmd: {' '.join(cmd)}")
         _log(f"  cwd: {root}")
 
-        # Capture stderr for diagnostics, discard stdout (can be very large)
+        # Capture stderr for diagnostics, discard stdout
         reports_dev = Path(root) / "reports_dev"
         reports_dev.mkdir(parents=True, exist_ok=True)
         stderr_log = reports_dev / "rechecker_claude_stderr.log"
