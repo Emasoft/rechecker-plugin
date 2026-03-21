@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Refactor
+
+- Lint once at start+end, remove dead orchestration scripts
+## [2.0.21] - 2026-03-21
+
 ### Features
 
 - Iterative check→fix loop inside agents, shared named worktree
@@ -11,6 +16,7 @@ All notable changes to this project will be documented in this file.
 ### Miscellaneous Tasks
 
 - Update uv.lock
+- Bump version to 2.0.21
 ## [2.0.20] - 2026-03-21
 
 ### Miscellaneous Tasks
