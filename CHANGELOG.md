@@ -4,9 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Documentation
+
+- Update SKILL.md for 4-agent architecture
+
+### Miscellaneous Tasks
+
+- Update uv.lock
+## [2.0.23] - 2026-03-21
+
 ### Features
 
 - 4-agent architecture with single-commit worktree
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.23
 ## [2.0.22] - 2026-03-21
 
 ### Miscellaneous Tasks
