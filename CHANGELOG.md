@@ -6,11 +6,23 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Robust git detection for submodules, subdirs, and missing repos
+- Skill must cd to git root before launching claude --worktree
+- Use inline $(git rev-parse --show-toplevel) instead of placeholder variable in skill
+
+### Miscellaneous Tasks
+
+- Pre-edit snapshot before fixing git detection and worktree isolation
+## [2.0.37] - 2026-03-21
+
+### Bug Fixes
+
 - Skill uses default agent, spawns orchestrator explicitly (worktree isolation stays with orchestrator, report cleanup in main context)
 
 ### Miscellaneous Tasks
 
 - Update uv.lock
+- Bump version to 2.0.37
 ## [2.0.36] - 2026-03-21
 
 ### Bug Fixes
