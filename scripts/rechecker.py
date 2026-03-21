@@ -94,25 +94,23 @@ def main() -> None:
     if not git_roots:
         sys.exit(0)
 
-    # Move any previous rechecker reports to reports_dev/ (cleanup from last run)
-    for root in git_roots:
-        reports_dev = Path(root) / "reports_dev"
-        for old_report in Path(root).glob("rechecker-report-*.md"):
-            reports_dev.mkdir(parents=True, exist_ok=True)
-            old_report.rename(reports_dev / old_report.name)
-
     # Launch the orchestrator in a named worktree for each git root.
-    # The orchestrator runs all 4 loops (lint→code review→func review→final lint),
-    # makes ONE commit, then exits. Claude Code merges the worktree.
+    # The orchestrator runs all 4 loops, commits, exits. Claude Code merges the worktree.
+    # After merge, move the report to reports_dev/ so it doesn't pollute the repo.
+    # Hook is async:true so waiting here doesn't block the main session.
     for root in git_roots:
         wt_name = f"rechecker-{Path(root).name}"
-        subprocess.Popen(
+        subprocess.run(
             ["claude", "--worktree", wt_name, "--agent", orchestrator, "--dangerously-skip-permissions"],
             cwd=root,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            start_new_session=True,
         )
+        # After worktree merge: move report to reports_dev/ (gitignored)
+        reports_dev = Path(root) / "reports_dev"
+        for report in Path(root).glob("rechecker-report-*.md"):
+            reports_dev.mkdir(parents=True, exist_ok=True)
+            report.rename(reports_dev / report.name)
 
 
 if __name__ == "__main__":
