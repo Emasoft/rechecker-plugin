@@ -181,9 +181,27 @@ def main() -> None:
             result = subprocess.run(cmd, cwd=root, stdout=subprocess.DEVNULL, stderr=stderr_f)
         _log(f"  claude exit code: {result.returncode}")
 
+        # Collect report from main tree (if worktree was merged)
         for report in Path(root).glob("rechecker-report-*.md"):
             report.rename(reports_dev / report.name)
-            _log(f"  moved report: {report.name}")
+            _log(f"  moved report from main: {report.name}")
+
+        # Also collect report from worktree dir (headless mode doesn't merge)
+        wt_dir = Path(root) / ".claude" / "worktrees" / wt_name
+        if wt_dir.is_dir():
+            for report in wt_dir.glob("rechecker-report-*.md"):
+                dest = reports_dev / report.name
+                if not dest.exists():
+                    shutil.copy2(str(report), str(dest))
+                    _log(f"  copied report from worktree: {report.name}")
+            # Also check reports_dev inside the worktree
+            wt_reports = wt_dir / "reports_dev"
+            if wt_reports.is_dir():
+                for report in wt_reports.glob("rechecker-report-*.md"):
+                    dest = reports_dev / report.name
+                    if not dest.exists():
+                        shutil.copy2(str(report), str(dest))
+                        _log(f"  copied report from worktree/reports_dev: {report.name}")
 
     _flush_log(cwd)
 
