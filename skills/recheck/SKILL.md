@@ -18,9 +18,9 @@ Flow (1 worktree, 1 commit at the end):
 3. Loop 3: opus checks intent → sonnet fixes → repeat until 0 intent issues
 4. Loop 4: final lint → sonnet fixes → repeat until 0 lint issues
 5. Merge reports into single output
-6. Commit → exit → Claude Code merges worktree
+6. Commit → exit
 
-All commands use `$(git rev-parse --show-toplevel)` inline to resolve the git root at runtime — no variables to track across steps.
+**This skill runs synchronously.** You are responsible for merging the worktree branch, resolving any conflicts, copying the report, and cleaning up. Do NOT leave unmerged branches behind.
 
 Copy the following checklist and use it to track the progress and completion of your tasks:
 
@@ -33,20 +33,28 @@ Copy the following checklist and use it to track the progress and completion of 
   ```bash
   cd "$(git rev-parse --show-toplevel)" && git log -1 --format=%H && git show --name-only --format= --diff-filter=d HEAD
   ```
-- [ ] **Launch the orchestrator in a worktree**:
+- [ ] **Launch the orchestrator in a worktree**. Note the worktree name — you will need it for the merge:
   ```bash
   cd "$(git rev-parse --show-toplevel)" && claude --worktree "rechecker-$(date +%s)" \
     --agent "rechecker-plugin:rechecker-orchestrator" \
     --dangerously-skip-permissions \
     -p "Run the full recheck pipeline on the latest commit."
   ```
-  Note: `--agent` takes the agent NAME (not file path). The `-p` flag provides the initial prompt. Wait for it to complete.
-- [ ] After the orchestrator exits and the worktree is merged, move the report to reports_dev/:
+  Wait for it to complete.
+- [ ] **Copy the report** from the worktree to `reports_dev/` before merging:
   ```bash
-  cd "$(git rev-parse --show-toplevel)" && mkdir -p reports_dev && mv rechecker-report-*.md reports_dev/ 2>/dev/null; true
+  cd "$(git rev-parse --show-toplevel)" && mkdir -p reports_dev && cp .claude/worktrees/<WORKTREE_NAME>/rechecker-report-*.md reports_dev/ 2>/dev/null; cp .claude/worktrees/<WORKTREE_NAME>/reports_dev/rechecker-report-*.md reports_dev/ 2>/dev/null; true
+  ```
+  Replace `<WORKTREE_NAME>` with the actual name used above (e.g., `rechecker-1711036800`).
+- [ ] **Merge the worktree branch** into the current branch:
+  ```bash
+  cd "$(git rev-parse --show-toplevel)" && git merge "worktree-<WORKTREE_NAME>" --no-edit
+  ```
+  If there are merge conflicts, **resolve them yourself**: read the conflicting files, choose the correct resolution, stage, and commit. Do not leave conflicts unresolved.
+- [ ] **Move any remaining reports** from the main tree to `reports_dev/`:
+  ```bash
+  cd "$(git rev-parse --show-toplevel)" && mv rechecker-report-*.md reports_dev/ 2>/dev/null; rm -f RECHECKER_MERGE_PENDING.md; true
   ```
 - [ ] Tell the user the report path: `reports_dev/rechecker-report-{TIMESTAMP}.md`
-
-**IMPORTANT**: Do NOT attempt to delete or remove worktrees or worktree branches. Claude Code automatically cleans up worktrees at session end.
 
 Do not consider the task done until all check points above have been completed.

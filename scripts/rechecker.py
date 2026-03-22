@@ -5,9 +5,8 @@ Detects git commit in Bash commands, finds the git root where each
 commit ran, launches claude --worktree --agent for each.
 Runs async (hooks.json "async": true).
 
-KNOWN ISSUE: PostToolUse may not fire for the git commit Bash call
-when a PreToolUse hook (e.g., git_safety_guard) is also registered
-for Bash. This is a Claude Code bug. Use /recheck as a workaround.
+After all orchestrators finish, outputs a JSON systemMessage on stdout
+telling the main Claude to merge the worktree branches and review reports.
 """
 
 import json
@@ -93,7 +92,6 @@ def find_git_root(start: str) -> str | None:
 
 def main() -> None:
     raw = sys.stdin.read()
-    # Log immediately — before any gates — so we know the hook fired
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
     _log(f"--- PostToolUse fired ({len(raw)} bytes) ---")
 
@@ -156,14 +154,16 @@ def main() -> None:
         sys.exit(0)
 
     _log(f"launching orchestrator for {len(git_roots)} repo(s): {git_roots}")
-    # Flush log NOW so the "launching" entry is visible immediately
-    # (otherwise it only appears after the orchestrator finishes, which can take 30+ min)
     _flush_log(cwd)
 
     orchestrator = "rechecker-plugin:rechecker-orchestrator"
 
+    # Track results for all repos to build the final message
+    results: list[dict[str, str]] = []
+
     for root in git_roots:
         wt_name = f"rechecker-{uuid.uuid4().hex[:8]}"
+        branch_name = f"worktree-{wt_name}"
         cmd = [
             "claude", "--worktree", wt_name,
             "--agent", orchestrator,
@@ -181,41 +181,74 @@ def main() -> None:
             result = subprocess.run(cmd, cwd=root, stdout=subprocess.DEVNULL, stderr=stderr_f)
         _log(f"  claude exit code: {result.returncode}")
 
-        # Do NOT merge here — the main Claude may be editing files right now.
-        # Instead, copy the report out and leave a notice for the main Claude
-        # to merge the worktree when it's ready.
-        branch_name = f"worktree-{wt_name}"
-        wt_dir = Path(root) / ".claude" / "worktrees" / wt_name
-
         # Copy report from worktree to reports_dev/ in the main tree
+        wt_dir = Path(root) / ".claude" / "worktrees" / wt_name
+        report_path = ""
         if wt_dir.is_dir():
             for report in wt_dir.glob("rechecker-report-*.md"):
                 dest = reports_dev / report.name
                 shutil.copy2(str(report), str(dest))
-                _log(f"  copied report from worktree: {report.name}")
+                report_path = str(dest)
+                _log(f"  copied report: {report.name}")
             wt_reports = wt_dir / "reports_dev"
             if wt_reports.is_dir():
                 for report in wt_reports.glob("rechecker-report-*.md"):
                     dest = reports_dev / report.name
                     if not dest.exists():
                         shutil.copy2(str(report), str(dest))
-                        _log(f"  copied report from worktree/reports_dev: {report.name}")
+                        report_path = str(dest)
+                        _log(f"  copied report: {report.name}")
 
-        # Write a notice file for the main Claude to see
-        notice_file = Path(root) / "RECHECKER_MERGE_PENDING.md"
-        notice_file.write_text(
-            f"# Rechecker: Merge Pending\n\n"
-            f"The rechecker reviewed and fixed bugs on branch `{branch_name}`.\n"
-            f"The worktree is at: `.claude/worktrees/{wt_name}/`\n"
-            f"The report is at: `reports_dev/`\n\n"
-            f"**When you are done with your current task**, merge the fixes:\n"
-            f"```bash\n"
-            f"git merge {branch_name} --no-edit\n"
-            f"```\n"
-            f"If there are conflicts, resolve them and commit.\n"
-            f"Then delete this file.\n"
-        )
-        _log("  wrote RECHECKER_MERGE_PENDING.md — main Claude will merge when ready")
+        results.append({
+            "root": root,
+            "branch": branch_name,
+            "wt_dir": str(wt_dir),
+            "report": report_path,
+            "exit_code": str(result.returncode),
+        })
+
+    # Write RECHECKER_MERGE_PENDING.md in each repo root — Claude will see this
+    # file when it does git status or ls. This is the only reliable way to
+    # communicate with the main Claude from an async hook.
+    for r in results:
+        merge_lines = [
+            "# Rechecker: Merge Pending",
+            "",
+            "The rechecker plugin reviewed your latest commit and fixed bugs.",
+            "",
+            f"- **Branch with fixes**: `{r['branch']}`",
+        ]
+        if r["report"]:
+            merge_lines.append(f"- **Report**: `{r['report']}`")
+        merge_lines.extend([
+            "",
+            "## What you must do",
+            "",
+            "When you finish your current task, merge the fixes and resolve any conflicts:",
+            "",
+            "```bash",
+            f'cd "{r["root"]}" && git merge {r["branch"]} --no-edit',
+            "```",
+            "",
+            "If there are merge conflicts, resolve them yourself and commit.",
+            "After merging, delete this file and the worktree branch:",
+            "",
+            "```bash",
+            f'rm RECHECKER_MERGE_PENDING.md && git branch -d {r["branch"]}',
+            "```",
+        ])
+        notice_path = Path(r["root"]) / "RECHECKER_MERGE_PENDING.md"
+        notice_path.write_text("\n".join(merge_lines) + "\n")
+        _log(f"  wrote {notice_path}")
+
+    # Also output systemMessage for the USER to see in the terminal
+    user_msg_parts = ["Rechecker completed."]
+    for r in results:
+        user_msg_parts.append(f"  Fixes on branch: {r['branch']}")
+        if r["report"]:
+            user_msg_parts.append(f"  Report: {r['report']}")
+    user_msg_parts.append("  See RECHECKER_MERGE_PENDING.md for merge instructions.")
+    print(json.dumps({"systemMessage": " ".join(user_msg_parts)}))
 
     _flush_log(cwd)
 
