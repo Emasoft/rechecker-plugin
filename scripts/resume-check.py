@@ -202,9 +202,9 @@ def main() -> None:
             lines.append("Or merge individually:")
             lines.append("")
             for m in valid:
-                lines.append(f"```bash")
+                lines.append("```bash")
                 lines.append(f'cd "{project_dir}" && git merge {m["branch"]} --no-edit')
-                lines.append(f"```")
+                lines.append("```")
                 if m.get("report"):
                     lines.append(f"Report: `{m['report']}`")
                 lines.append("")
@@ -238,9 +238,9 @@ def main() -> None:
             if inc.get("current_loop"):
                 loop_info = f" (was on loop {inc['current_loop']}, iter {inc.get('current_iter', '?')})"
             lines.append(f"- **{inc['worktree']}**{loop_info}")
-            lines.append(f"  ```bash")
+            lines.append("  ```bash")
             lines.append(f'  claude --worktree {inc["worktree"]} --agent {agent_ref} --dangerously-skip-permissions -p "Resume interrupted recheck. Read .rechecker/rck-progress.json for state."')
-            lines.append(f"  ```")
+            lines.append("  ```")
             lines.append("")
 
     context_message = "\n".join(lines)
