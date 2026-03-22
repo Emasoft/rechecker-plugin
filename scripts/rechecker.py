@@ -5,8 +5,12 @@ Detects git commit in Bash commands, finds the git root where each
 commit ran, launches claude --worktree --agent for each.
 Runs async (hooks.json "async": true).
 
-After all orchestrators finish, outputs a JSON systemMessage on stdout
-telling the main Claude to merge the worktree branches and review reports.
+After all orchestrators finish, writes RECHECKER_MERGE_PENDING.md
+for the main Claude and outputs a systemMessage for the user.
+
+Naming convention for all files:
+  rck-{YYYYMMDD_HHMMSS}_{UUID6}-{purpose}.{ext}
+  e.g. rck-20260321_193000_a1b2c3-report.md
 """
 
 import json
@@ -33,7 +37,7 @@ def _flush_log(project_dir: str) -> None:
     try:
         log_dir = Path(project_dir) / "reports_dev"
         log_dir.mkdir(parents=True, exist_ok=True)
-        with open(log_dir / "rechecker_hook.log", "a") as f:
+        with open(log_dir / "rck-hook.log", "a") as f:
             f.write("\n".join(_LOG_LINES) + "\n")
     except OSError:
         pass
@@ -162,60 +166,69 @@ def main() -> None:
     results: list[dict[str, str]] = []
 
     for root in git_roots:
-        wt_name = f"rechecker-{uuid.uuid4().hex[:8]}"
+        # Generate unique ID: 6-char uuid used in worktree name and all file names
+        uid = uuid.uuid4().hex[:6]
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Naming: rck-{datetime}_{uuid6}
+        tag = f"rck-{ts}_{uid}"
+        wt_name = tag
         branch_name = f"worktree-{wt_name}"
+
         cmd = [
             "claude", "--worktree", wt_name,
             "--agent", orchestrator,
             "--dangerously-skip-permissions",
             "-p", "Run the full recheck pipeline on the latest commit.",
         ]
+        _log(f"  worktree: {wt_name}")
         _log(f"  cmd: {' '.join(cmd)}")
         _log(f"  cwd: {root}")
         _flush_log(cwd)
 
         reports_dev = Path(root) / "reports_dev"
         reports_dev.mkdir(parents=True, exist_ok=True)
-        stderr_log = reports_dev / "rechecker_claude_stderr.log"
+        stderr_log = reports_dev / f"{tag}-stderr.log"
         with open(stderr_log, "a") as stderr_f:
             result = subprocess.run(cmd, cwd=root, stdout=subprocess.DEVNULL, stderr=stderr_f)
         _log(f"  claude exit code: {result.returncode}")
 
-        # Copy report from worktree to reports_dev/ in the main tree
+        # Copy report from worktree to reports_dev/ with rck- prefix
         wt_dir = Path(root) / ".claude" / "worktrees" / wt_name
         report_path = ""
         if wt_dir.is_dir():
-            for report in wt_dir.glob("rechecker-report-*.md"):
-                dest = reports_dev / report.name
+            # Look in worktree root
+            for report in wt_dir.glob("rck-*-report.md"):
+                dest = reports_dev / f"{tag}-report.md"
                 shutil.copy2(str(report), str(dest))
                 report_path = str(dest)
-                _log(f"  copied report: {report.name}")
+                _log(f"  copied report -> {dest.name}")
+            # Look in worktree/reports_dev/
             wt_reports = wt_dir / "reports_dev"
-            if wt_reports.is_dir():
-                for report in wt_reports.glob("rechecker-report-*.md"):
-                    dest = reports_dev / report.name
-                    if not dest.exists():
-                        shutil.copy2(str(report), str(dest))
-                        report_path = str(dest)
-                        _log(f"  copied report: {report.name}")
+            if wt_reports.is_dir() and not report_path:
+                for report in wt_reports.glob("rck-*-report.md"):
+                    dest = reports_dev / f"{tag}-report.md"
+                    shutil.copy2(str(report), str(dest))
+                    report_path = str(dest)
+                    _log(f"  copied report -> {dest.name}")
 
         results.append({
             "root": root,
             "branch": branch_name,
-            "wt_dir": str(wt_dir),
+            "wt_name": wt_name,
+            "tag": tag,
             "report": report_path,
             "exit_code": str(result.returncode),
         })
 
-    # Write RECHECKER_MERGE_PENDING.md in each repo root — Claude will see this
-    # file when it does git status or ls. This is the only reliable way to
-    # communicate with the main Claude from an async hook.
+    # Write rck-*-merge-pending.md in each repo root for Claude to see
     for r in results:
+        merge_file = f"{r['tag']}-merge-pending.md"
         merge_lines = [
             "# Rechecker: Merge Pending",
             "",
             "The rechecker plugin reviewed your latest commit and fixed bugs.",
             "",
+            f"- **Worktree**: `{r['wt_name']}`",
             f"- **Branch with fixes**: `{r['branch']}`",
         ]
         if r["report"]:
@@ -234,21 +247,21 @@ def main() -> None:
             "After merging, delete this file and the worktree branch:",
             "",
             "```bash",
-            f'rm RECHECKER_MERGE_PENDING.md && git branch -d {r["branch"]}',
+            f"rm {merge_file} && git branch -d {r['branch']}",
             "```",
         ])
-        notice_path = Path(r["root"]) / "RECHECKER_MERGE_PENDING.md"
+        notice_path = Path(r["root"]) / merge_file
         notice_path.write_text("\n".join(merge_lines) + "\n")
         _log(f"  wrote {notice_path}")
 
-    # Also output systemMessage for the USER to see in the terminal
-    user_msg_parts = ["Rechecker completed."]
+    # Output systemMessage for the USER to see in the terminal
+    user_parts = ["Rechecker completed."]
     for r in results:
-        user_msg_parts.append(f"  Fixes on branch: {r['branch']}")
+        user_parts.append(f"Fixes on branch: {r['branch']}")
         if r["report"]:
-            user_msg_parts.append(f"  Report: {r['report']}")
-    user_msg_parts.append("  See RECHECKER_MERGE_PENDING.md for merge instructions.")
-    print(json.dumps({"systemMessage": " ".join(user_msg_parts)}))
+            user_parts.append(f"Report: {r['report']}")
+    user_parts.append("See rck-*-merge-pending.md for merge instructions.")
+    print(json.dumps({"systemMessage": " ".join(user_parts)}))
 
     _flush_log(cwd)
 

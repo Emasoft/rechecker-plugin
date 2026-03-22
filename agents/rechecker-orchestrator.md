@@ -25,13 +25,15 @@ All data exchange between agents uses files at predefined paths. **Never pass fi
     ocr-pass{N}-{SAFE_NAME}.json         # OCR findings per file per pass
     ofr-pass{N}-{SAFE_NAME}.json         # OFR findings per file per pass
     scf-pass{N}-{SAFE_NAME}.md           # SCF fix summary per file per pass
-  rechecker-report.md                    # final merged report
+  {TAG}-report.md                        # final merged report (worktree root)
 ```
 
 ### Naming conventions:
+- `{TAG}` = worktree name, derived from branch: `git branch --show-current | sed 's/^worktree-//'` — e.g., `rck-20260321_193000_a1b2c3`
 - `{N}` = pass number: `1`, `2`, `3`...
 - `{SAFE_NAME}` = source filename with `/` and `.` replaced by `-` (e.g., `src/utils.py` → `src-utils-py`)
 - All paths are relative to worktree root
+- The final report MUST be named `{TAG}-report.md` (in worktree root)
 
 ### How to invoke subagents:
 
@@ -107,11 +109,18 @@ Same as Step 1. Catches regressions from fix swarms. **DO NOT COMMIT.**
 
 ## Step 5 — Merge Reports
 
-Run this to merge all findings into one report:
+First, get the tag from the branch name:
+```bash
+TAG=$(git branch --show-current | sed 's/^worktree-//')
+echo "TAG=$TAG"
+```
+
+Then merge all findings into one report named `{TAG}-report.md`:
 ```bash
 python3 -c "
-import json, datetime
+import json, datetime, subprocess
 from pathlib import Path
+tag = subprocess.run(['git','branch','--show-current'], capture_output=True, text=True).stdout.strip().removeprefix('worktree-')
 reports = Path('.rechecker/reports')
 findings = []
 for f in sorted(reports.glob('*.json')):
@@ -121,13 +130,13 @@ for f in sorted(reports.glob('*.json')):
     except: pass
 r = '# Rechecker Final Report\n\n'
 r += f'**Date**: {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n'
+r += f'**Tag**: {tag}\n'
 r += f'**Issues found and fixed**: {len(findings)}\n\n'
 for i, f in enumerate(findings, 1):
     r += f'### {i}. {f.get(\"file\",\"?\")}:{f.get(\"line\",\"?\")}\n'
     r += f'- **Severity**: {f.get(\"severity\",\"?\")}\n'
     r += f'- **Description**: {f.get(\"description\", f.get(\"intent\",\"?\"))}\n\n'
-ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-fname = f'rechecker-report-{ts}.md'
+fname = f'{tag}-report.md'
 Path(fname).write_text(r)
 print(f'Report: {fname} ({len(findings)} issues)')
 "
@@ -160,7 +169,7 @@ If no changes to commit (code was already clean), skip the commit. Exit.
 - [ ] Loop 2 complete: 0 code correctness issues
 - [ ] Loop 3 complete: 0 functionality issues
 - [ ] Loop 4 complete: 0 lint errors (final)
-- [ ] Merged reports into `rechecker-report-{TIMESTAMP}.md` (worktree root — gets committed and merged)
+- [ ] Merged reports into `{TAG}-report.md` (worktree root — gets committed)
 - [ ] Single commit created (or skipped if clean)
 
 Copy this checklist and use it to track progress.
