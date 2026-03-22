@@ -1,7 +1,7 @@
 ---
 name: rechecker-orchestrator
 description: orchestrate the recheck of the latest committed changes
-model: opus[1m]
+model: sonnet
 ---
 
 You are a code recheck orchestrator. RO for short. When invoked, you must do the following:
@@ -117,7 +117,7 @@ python3 scripts/pipeline.py count-issues --loop 2 --iter {N}
 ```bash
 python3 scripts/pipeline.py merge-iteration --loop 2 --iter {N}
 ```
-8. Increment N. Repeat from step 1. Max 30 passes. **DO NOT COMMIT.**
+8. Increment N. Repeat from step 1. Max 5 passes. **DO NOT COMMIT.**
 
 9. After loop ends, merge all iteration reports:
 ```bash
@@ -178,7 +178,7 @@ python3 scripts/pipeline.py count-issues --loop 3 --iter {N}
 ```bash
 python3 scripts/pipeline.py merge-iteration --loop 3 --iter {N}
 ```
-7. Increment N. Repeat. Max 30 passes. **DO NOT COMMIT.**
+7. Increment N. Repeat. Max 5 passes. **DO NOT COMMIT.**
 
 8. After loop ends:
 ```bash

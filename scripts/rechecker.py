@@ -94,50 +94,61 @@ def find_git_root(start: str) -> str | None:
     return None
 
 
+def _is_rechecker_worktree(cwd: str) -> bool:
+    """Check if we're inside a rechecker worktree (prevents recursive triggering)."""
+    try:
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=cwd, capture_output=True, text=True, timeout=5,
+        )
+        branch = result.stdout.strip()
+        return branch.startswith("worktree-rck-")
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return False
+
+
 def main() -> None:
     raw = sys.stdin.read()
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
-    _log(f"--- PostToolUse fired ({len(raw)} bytes) ---")
 
+    # Fast gates — no logging, no JSON parsing, exit immediately for non-commit calls
     try:
         hook_input = json.loads(raw)
-    except (json.JSONDecodeError, ValueError) as e:
-        _log(f"JSON parse error: {e}")
-        _flush_log(project_dir)
+    except (json.JSONDecodeError, ValueError):
         sys.exit(0)
 
     tool_name = parse_json_field(hook_input, "tool_name")
+    if tool_name != "Bash":
+        sys.exit(0)
+
     command = parse_json_field(hook_input, "tool_input.command")
+    if re.search(r"--amend", command):
+        sys.exit(0)
+    if not any(re.search(r"\bgit\s+commit\b", p) for p in re.split(r"&&|;|\|", command)):
+        sys.exit(0)
+
+    # Past the fast gates — this is a git commit. Start logging.
     cwd = (
         parse_json_field(hook_input, "tool_input.cwd")
         or parse_json_field(hook_input, "cwd")
         or os.environ.get("CLAUDE_PROJECT_DIR", "")
         or os.getcwd()
     )
+    _log(f"--- git commit detected ---")
+    _log(f"cwd={cwd} command={command[:200]}")
 
-    _log(f"tool={tool_name} cwd={cwd} command={command[:200]}")
-    if isinstance(hook_input, dict):
-        _log(f"hook keys: {sorted(hook_input.keys())}")
+    # CRITICAL: prevent recursive triggering — if we're inside a rechecker worktree, skip
+    if _is_rechecker_worktree(cwd):
+        _log("skip: inside rechecker worktree (preventing recursion)")
+        _flush_log(project_dir)
+        sys.exit(0)
 
-    # Gate: only Bash with git commit (not --amend)
-    if tool_name != "Bash":
-        _log("skip: not Bash")
-        _flush_log(project_dir)
-        sys.exit(0)
-    if re.search(r"--amend", command):
-        _log("skip: --amend")
-        _flush_log(project_dir)
-        sys.exit(0)
-    if not any(re.search(r"\bgit\s+commit\b", p) for p in re.split(r"&&|;|\|", command)):
-        _log("skip: no git commit in command")
-        _flush_log(project_dir)
-        sys.exit(0)
     if not shutil.which("claude"):
         _log("skip: claude not on PATH")
         _flush_log(project_dir)
         sys.exit(0)
 
-    _log("PASSED all gates — git commit detected")
+    _log("PASSED all gates")
 
     # Find all git roots where commits happened
     commit_dirs = extract_git_commit_dirs(command, cwd) or [cwd]

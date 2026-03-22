@@ -8,7 +8,7 @@
           {
             "type": "command",
             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/rechecker.py",
-            "timeout": 86400,
+            "timeout": 7200,
             "async": true
           }
         ]

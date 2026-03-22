@@ -1,7 +1,7 @@
 ---
 name: recheck
 description: recheck the last committed changes
-model: opus[1m]
+model: sonnet
 ---
 
 Use this skill to trigger a full automated code review of the latest committed changes.
