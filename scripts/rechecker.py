@@ -166,13 +166,16 @@ def main() -> None:
     results: list[dict[str, str]] = []
 
     for root in git_roots:
-        # Generate unique ID: 6-char uuid used in worktree name and all file names
+        # 6-char uuid ties all files from this run together
         uid = uuid.uuid4().hex[:6]
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # Naming: rck-{datetime}_{uuid6}
-        tag = f"rck-{ts}_{uid}"
-        wt_name = tag
+        # Worktree name uses uuid only (stays fixed for the run's lifetime)
+        wt_name = f"rck-{uid}"
         branch_name = f"worktree-{wt_name}"
+
+        def _rck_name(purpose: str, ext: str) -> str:
+            """Generate rck-{now}_{uid}-{purpose}.{ext} with timestamp at write time."""
+            now = datetime.now().strftime("%Y%m%d_%H%M%S")
+            return f"rck-{now}_{uid}-{purpose}.{ext}"
 
         cmd = [
             "claude", "--worktree", wt_name,
@@ -180,33 +183,31 @@ def main() -> None:
             "--dangerously-skip-permissions",
             "-p", "Run the full recheck pipeline on the latest commit.",
         ]
-        _log(f"  worktree: {wt_name}")
+        _log(f"  worktree: {wt_name} (uid={uid})")
         _log(f"  cmd: {' '.join(cmd)}")
         _log(f"  cwd: {root}")
         _flush_log(cwd)
 
         reports_dev = Path(root) / "reports_dev"
         reports_dev.mkdir(parents=True, exist_ok=True)
-        stderr_log = reports_dev / f"{tag}-stderr.log"
+        stderr_log = reports_dev / _rck_name("stderr", "log")
         with open(stderr_log, "a") as stderr_f:
             result = subprocess.run(cmd, cwd=root, stdout=subprocess.DEVNULL, stderr=stderr_f)
         _log(f"  claude exit code: {result.returncode}")
 
-        # Copy report from worktree to reports_dev/ with rck- prefix
+        # Copy report from worktree to reports_dev/
         wt_dir = Path(root) / ".claude" / "worktrees" / wt_name
         report_path = ""
         if wt_dir.is_dir():
-            # Look in worktree root
             for report in wt_dir.glob("rck-*-report.md"):
-                dest = reports_dev / f"{tag}-report.md"
+                dest = reports_dev / _rck_name("report", "md")
                 shutil.copy2(str(report), str(dest))
                 report_path = str(dest)
                 _log(f"  copied report -> {dest.name}")
-            # Look in worktree/reports_dev/
             wt_reports = wt_dir / "reports_dev"
             if wt_reports.is_dir() and not report_path:
                 for report in wt_reports.glob("rck-*-report.md"):
-                    dest = reports_dev / f"{tag}-report.md"
+                    dest = reports_dev / _rck_name("report", "md")
                     shutil.copy2(str(report), str(dest))
                     report_path = str(dest)
                     _log(f"  copied report -> {dest.name}")
@@ -215,14 +216,15 @@ def main() -> None:
             "root": root,
             "branch": branch_name,
             "wt_name": wt_name,
-            "tag": tag,
+            "uid": uid,
             "report": report_path,
             "exit_code": str(result.returncode),
         })
 
     # Write rck-*-merge-pending.md in each repo root for Claude to see
     for r in results:
-        merge_file = f"{r['tag']}-merge-pending.md"
+        now = datetime.now().strftime("%Y%m%d_%H%M%S")
+        merge_file = f"rck-{now}_{r['uid']}-merge-pending.md"
         merge_lines = [
             "# Rechecker: Merge Pending",
             "",
