@@ -22,7 +22,7 @@ All data exchange uses files at predefined paths. **Never pass findings inline i
   commit-message.txt                     # commit message for functionality review
   reports/
     lint-pass{N}.txt                     # linter output per pass
-    rck-{TS}_{UID}-[LP00002-IT00001-FID00001]-review.json  # review findings
+    rck-{TS}_{UID}-[LP00002-IT00001-FID00001]-review.md   # review findings
     rck-{TS}_{UID}-[LP00002-IT00001-FID00001]-fix.md       # fix report
 ```
 

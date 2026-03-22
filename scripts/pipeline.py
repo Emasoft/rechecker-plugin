@@ -149,9 +149,16 @@ def _find_reports(directory: Path, loop: str, iter_: str | None, fid: str | None
         tag_pattern = re.compile(re.escape(f"[{lp}-{it}-") + r"FID\d{5}\]")
         expected_level = "file"
     else:
-        # Search for iteration-level or loop-level reports
-        tag_pattern = re.compile(re.escape(f"[{lp}") + r"[-\]]")
-        expected_level = None  # accept both
+        # Infer expected level from the suffix
+        if "iteration" in suffix:
+            tag_pattern = re.compile(re.escape(f"[{lp}-") + r"IT\d{5}\]")
+            expected_level = "iteration"
+        elif "loop" in suffix:
+            tag_pattern = re.compile(re.escape(f"[{lp}]"))
+            expected_level = "loop"
+        else:
+            tag_pattern = re.compile(re.escape(f"[{lp}") + r"[-\]]")
+            expected_level = None
     full_pattern = re.compile(r".*" + tag_pattern.pattern + r"-" + re.escape(suffix))
 
     results = []
@@ -292,6 +299,9 @@ def cmd_init(args: argparse.Namespace) -> None:
 def cmd_groups(args: argparse.Namespace) -> None:
     """List groups and their files as JSON."""
     index = _load_index()
+    if not index.get("macro_groups"):
+        print("ERROR: No macro-groups in index. Run 'init' first.", file=sys.stderr)
+        sys.exit(1)
     macro = args.macro or list(index["macro_groups"].keys())[0]
 
     if macro not in index["macro_groups"]:

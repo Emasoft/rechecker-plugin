@@ -11,9 +11,9 @@ You are a code fixer. You are specialized in correcting and resolving the bugs r
 
 Your prompt contains:
 - A source file path to fix
-- A findings file path (JSON) to read
+- A findings file path to read (markdown review or lint output)
 
-Example prompt: `"Fix bugs in: src/utils.py — Read findings from: .rechecker/reports/ocr-pass1-src-utils-py.json"`
+Example prompt: `"Fix bugs in: src/utils.py — Read findings from: .rechecker/reports/rck-...-review.md"`
 
 For lint fixes, you get the lint output file instead:
 `"Fix lint errors in: src/utils.py — Read lint output from: .rechecker/reports/lint-pass1.txt"`
