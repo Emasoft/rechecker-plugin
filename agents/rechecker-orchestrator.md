@@ -33,9 +33,33 @@ All data exchange uses files at predefined paths. **Never pass findings inline i
 - Tags: `[LP{5}-IT{5}-FID{5}]` for file-level, `[LP{5}-IT{5}]` for iteration, `[LP{5}]` for loop
 - The final report: `rck-{TS}_{UID}-report.md` (worktree root)
 
-## Setup (once, before the loops)
+## Resume Detection (FIRST THING — before Setup)
 
-1. Extract UID and initialize:
+Before running Setup, check if a previous run was interrupted:
+```bash
+python3 scripts/pipeline.py progress-status
+```
+If `scripts/pipeline.py` is not found, look for it at `${CLAUDE_PLUGIN_ROOT}/scripts/pipeline.py`.
+
+- If status is `"not_found"` → fresh run, proceed to Setup normally.
+- If status is `"completed"` → pipeline already finished. Skip to Step 6 (commit) if `committed` is false, otherwise exit.
+- If status is `"running"` or `"interrupted"` → **RESUME MODE**. Read the full `.rechecker/rck-progress.json` to see which loops/iterations are done. Skip completed loops and resume from the current loop/iteration. The `.rechecker/index.json`, `files.txt`, `commit-message.txt`, and any reports from previous iterations are still on disk. Do NOT re-run `init` or overwrite existing files.
+
+**Resume rules:**
+- A loop with `"status": "completed"` → skip entirely.
+- A loop with `"status": "running"` → check `files_done` and `files_clean` arrays. Files in `files_clean` need no further review in this loop. Files in `files_done` had fixes applied but may need re-review in the next iteration. Files NOT in either list still need processing.
+- A loop with `"status": "pending"` → run from scratch.
+
+## Setup (once, before the loops — skip if resuming)
+
+1. Ensure TLDR artifacts are gitignored (prevents interference with worktree commits):
+```bash
+for pattern in ".tldr/" ".tldrignore" ".tldr_session_*"; do
+  grep -qxF "$pattern" .gitignore 2>/dev/null || echo "$pattern" >> .gitignore
+done
+```
+
+2. Extract UID and initialize:
 ```bash
 UID=$(git branch --show-current | sed 's/^worktree-rck-//')
 echo "UID=$UID"
@@ -44,20 +68,30 @@ git log -1 --format=%s HEAD > .rechecker/commit-message.txt
 mkdir -p .rechecker/reports
 ```
 
-2. Initialize the pipeline index (assigns FIDs, creates groups):
+3. Initialize the pipeline index (assigns FIDs, creates groups):
 ```bash
 python3 scripts/pipeline.py init --uid "$UID"
 ```
 If `scripts/pipeline.py` is not found, look for it at `${CLAUDE_PLUGIN_ROOT}/scripts/pipeline.py`.
 
-3. Read the groups output to know what files to process:
+4. Initialize progress tracking:
+```bash
+python3 scripts/pipeline.py progress-init
+```
+
+5. Read the groups output to know what files to process:
 ```bash
 python3 scripts/pipeline.py groups
 ```
 
-4. Check linter availability: `ruff`, `mypy`, `shellcheck`, `npx eslint`, `go vet`.
+6. Check linter availability: `ruff`, `mypy`, `shellcheck`, `npx eslint`, `go vet`.
 
 ## Step 1 — [LOOP 1] Initial Linting (LP00001)
+
+Mark loop start:
+```bash
+python3 scripts/pipeline.py progress-update --loop 1 --action start-loop
+```
 
 Lint the changed files directly. Save output to `.rechecker/reports/lint-pass{N}.txt`.
 If lint errors found:
@@ -66,11 +100,26 @@ If lint errors found:
   `subagent_type: "sonnet-code-fixer"`, `model: "sonnet"`
 - Re-lint. Repeat until 0 errors. **DO NOT COMMIT.**
 
+Mark loop done:
+```bash
+python3 scripts/pipeline.py progress-update --loop 1 --action end-loop
+```
+
 ## Step 2 — [LOOP 2] Code Correctness Review (LP00002)
+
+Mark loop start:
+```bash
+python3 scripts/pipeline.py progress-update --loop 2 --action start-loop
+```
 
 **Use the LLM Externalizer MCP for reviews — do NOT spawn opus agents.**
 
 **Pass N (iteration IT{N}):**
+
+Mark iteration start:
+```bash
+python3 scripts/pipeline.py progress-update --loop 2 --action start-iter --iter {N}
+```
 
 1. For each file, call the LLM Externalizer to review it.
    **Important**: The externalizer model receives the file content inline (in markdown backticks).
@@ -113,24 +162,37 @@ Parameters:
 2. The tool returns a file path to the output .md file. Read it.
 3. Copy the output file to:
    `.rechecker/reports/rck-{TS}_{UID}-[LP00002-IT{N:05d}-FID{ID:05d}]-review.md`
-4. Check the content: if it contains "NO ISSUES FOUND", this file is clean.
+4. Check the content: if it contains "NO ISSUES FOUND", this file is clean — mark it:
+   ```bash
+   python3 scripts/pipeline.py progress-update --loop 2 --action file-clean --fid {FID}
+   ```
    Otherwise, count the `### BUG:` headers to know how many issues were found.
 5. After all files are reviewed, if ALL reviews say "NO ISSUES FOUND" → exit loop, go to Step 3.
 6. Launch SCF swarm (one per file with issues, parallel). Each SCF prompt:
    `"Fix bugs in: {file} — Read findings from: .rechecker/reports/rck-...-review.md"`
    `subagent_type: "sonnet-code-fixer"`, `model: "sonnet"`
+   After each file is fixed, mark it:
+   ```bash
+   python3 scripts/pipeline.py progress-update --loop 2 --action file-done --fid {FID}
+   ```
 7. Merge fix reports for this iteration:
 ```bash
 python3 scripts/pipeline.py merge-iteration --loop 2 --iter {N}
 ```
 8. Increment N. Repeat from step 1. Max 30 passes. **DO NOT COMMIT.**
 
-9. After loop ends, merge all iteration reports:
+9. After loop ends, merge all iteration reports and mark loop done:
 ```bash
 python3 scripts/pipeline.py merge-loop --loop 2
+python3 scripts/pipeline.py progress-update --loop 2 --action end-loop
 ```
 
 ## Step 3 — [LOOP 3] Functionality Review (LP00003)
+
+Mark loop start:
+```bash
+python3 scripts/pipeline.py progress-update --loop 3 --action start-loop
+```
 
 **Use the LLM Externalizer MCP for reviews — do NOT spawn opus agents.**
 
@@ -140,6 +202,11 @@ COMMIT_MSG=$(cat .rechecker/commit-message.txt)
 ```
 
 **Pass N (iteration IT{N}):**
+
+Mark iteration start:
+```bash
+python3 scripts/pipeline.py progress-update --loop 3 --action start-iter --iter {N}
+```
 
 1. For each file, call the LLM Externalizer.
    **Important**: Same constraints as Loop 2 — the model only sees the file content inline,
@@ -184,26 +251,44 @@ Parameters:
 2. The tool returns a file path to the output .md file. Read it.
 3. Copy the output file to:
    `.rechecker/reports/rck-{TS}_{UID}-[LP00003-IT{N:05d}-FID{ID:05d}]-review.md`
-4. Check the content: if it contains "NO ISSUES FOUND", this file is clean.
+4. Check the content: if it contains "NO ISSUES FOUND", this file is clean — mark it:
+   ```bash
+   python3 scripts/pipeline.py progress-update --loop 3 --action file-clean --fid {FID}
+   ```
    Otherwise, count the `### ISSUE:` headers to know how many issues were found.
 5. If ALL reviews say "NO ISSUES FOUND" → exit loop, go to Step 4.
 6. Launch SCF swarm for files with issues. Each SCF prompt:
    `"Fix issues in: {file} — Read findings from: .rechecker/reports/rck-...-review.md"`
    `subagent_type: "sonnet-code-fixer"`, `model: "sonnet"`
-6. Merge fix reports:
+   After each file is fixed, mark it:
+   ```bash
+   python3 scripts/pipeline.py progress-update --loop 3 --action file-done --fid {FID}
+   ```
+7. Merge fix reports:
 ```bash
 python3 scripts/pipeline.py merge-iteration --loop 3 --iter {N}
 ```
-7. Increment N. Repeat. Max 30 passes. **DO NOT COMMIT.**
+8. Increment N. Repeat. Max 30 passes. **DO NOT COMMIT.**
 
-8. After loop ends:
+9. After loop ends, merge and mark loop done:
 ```bash
 python3 scripts/pipeline.py merge-loop --loop 3
+python3 scripts/pipeline.py progress-update --loop 3 --action end-loop
 ```
 
 ## Step 4 — [LOOP 4] Final Linting (LP00004)
 
+Mark loop start:
+```bash
+python3 scripts/pipeline.py progress-update --loop 4 --action start-loop
+```
+
 Same as Step 1. Catches regressions from fix swarms. **DO NOT COMMIT.**
+
+Mark loop done:
+```bash
+python3 scripts/pipeline.py progress-update --loop 4 --action end-loop
+```
 
 ## Step 5 — Merge Final Report
 
@@ -216,9 +301,10 @@ This creates `rck-{TS}_{UID}-report.md` in the worktree root and cleans up inter
 ## Step 6 — Commit and Exit
 
 ```bash
-git add -A && git commit -m "rechecker: automated review fixes"
+git add -A -- ':!.tldr' ':!.tldrignore' ':!.tldr_session_*' && git commit -m "rechecker: automated review fixes"
+python3 scripts/pipeline.py progress-complete
 ```
-If no changes to commit (code was already clean), skip the commit. Exit.
+If no changes to commit (code was already clean), skip the commit but still run `progress-complete`. Exit.
 
 ---
 
@@ -236,9 +322,11 @@ If no changes to commit (code was already clean), skip the commit. Exit.
 
 ## Completion Checklist
 
+- [ ] Checked `progress-status` for resume detection
 - [ ] Extracted UID from branch name
 - [ ] Created `.rechecker/files.txt` and `.rechecker/commit-message.txt`
 - [ ] Ran `pipeline.py init` to create index
+- [ ] Ran `pipeline.py progress-init` to create progress file
 - [ ] Verified linter availability
 - [ ] Loop 1 (LP00001): 0 lint errors
 - [ ] Loop 2 (LP00002): 0 code correctness issues (via LLM Externalizer)
@@ -246,5 +334,6 @@ If no changes to commit (code was already clean), skip the commit. Exit.
 - [ ] Loop 4 (LP00004): 0 lint errors (final)
 - [ ] Ran `pipeline.py merge-final` → final report created
 - [ ] Single commit created (or skipped if clean)
+- [ ] Ran `pipeline.py progress-complete`
 
 Copy this checklist and use it to track progress.

@@ -24,14 +24,17 @@ Subcommands:
 
 import argparse
 import json
+import os
 import re
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
 RECHECKER_DIR = Path(".rechecker")
 REPORTS_DIR = RECHECKER_DIR / "reports"
 INDEX_FILE = RECHECKER_DIR / "index.json"
+PROGRESS_FILE = RECHECKER_DIR / "rck-progress.json"
 
 # File size thresholds for big vs small classification
 BIG_FILE_LINES = 200
@@ -75,6 +78,36 @@ def _load_index() -> dict:
 
 def _save_index(index: dict) -> None:
     INDEX_FILE.write_text(json.dumps(index, indent=2) + "\n")
+
+
+def _atomic_write_json(path: Path, data: dict) -> None:
+    """Write JSON atomically: write to temp file in same dir, then os.rename()."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp", prefix=".rck-")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.rename(tmp_path, str(path))
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _load_progress() -> dict:
+    if not PROGRESS_FILE.exists():
+        return {}
+    return json.loads(PROGRESS_FILE.read_text())
+
+
+def _save_progress(progress: dict) -> None:
+    progress["updated"] = datetime.now().isoformat()
+    _atomic_write_json(PROGRESS_FILE, progress)
 
 
 # Strict tag validation — the bracket content must match EXACTLY one of 3 forms.
@@ -460,6 +493,133 @@ def cmd_count_issues(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+# ── Progress tracking ────────────────────────────────────────────────────
+
+# rck-progress.json schema:
+# {
+#   "uid": "ab1234",
+#   "status": "running" | "completed" | "interrupted",
+#   "created": "ISO datetime",
+#   "updated": "ISO datetime",
+#   "current_loop": 1,        # 1-4 (which loop is active)
+#   "current_iter": 1,        # iteration within current loop
+#   "loops": {
+#     "1": {"status": "completed", "files_done": ["FID00001", ...]},
+#     "2": {"status": "running", "iter": 3, "files_done": ["FID00001", ...],
+#            "files_clean": ["FID00002", ...]},
+#     "3": {"status": "pending"},
+#     "4": {"status": "pending"}
+#   },
+#   "committed": false        # true after final git commit in Step 6
+# }
+
+
+def cmd_progress_init(_args: argparse.Namespace) -> None:
+    """Initialize rck-progress.json at the start of a pipeline run."""
+    index = _load_index()
+    uid = index["uid"]
+
+    progress = {
+        "uid": uid,
+        "status": "running",
+        "created": datetime.now().isoformat(),
+        "updated": datetime.now().isoformat(),
+        "current_loop": 1,
+        "current_iter": 1,
+        "loops": {
+            "1": {"status": "pending", "files_done": [], "files_clean": []},
+            "2": {"status": "pending", "iter": 0, "files_done": [], "files_clean": []},
+            "3": {"status": "pending", "iter": 0, "files_done": [], "files_clean": []},
+            "4": {"status": "pending", "files_done": [], "files_clean": []},
+        },
+        "committed": False,
+    }
+    _save_progress(progress)
+    print(f"Progress initialized for uid={uid}")
+
+
+def cmd_progress_update(args: argparse.Namespace) -> None:
+    """Update progress after completing a step in the pipeline."""
+    progress = _load_progress()
+    if not progress:
+        print("ERROR: rck-progress.json not found. Run 'progress-init' first.", file=sys.stderr)
+        sys.exit(1)
+
+    loop_key = str(args.loop)
+    if loop_key not in progress["loops"]:
+        print(f"ERROR: invalid loop {loop_key}", file=sys.stderr)
+        sys.exit(1)
+
+    loop_data = progress["loops"][loop_key]
+
+    if args.action == "start-loop":
+        loop_data["status"] = "running"
+        progress["current_loop"] = int(args.loop)
+        progress["current_iter"] = 1
+        if "iter" in loop_data:
+            loop_data["iter"] = 1
+
+    elif args.action == "start-iter":
+        progress["current_iter"] = int(args.iter)
+        if "iter" in loop_data:
+            loop_data["iter"] = int(args.iter)
+
+    elif args.action == "file-done":
+        if args.fid and args.fid not in loop_data["files_done"]:
+            loop_data["files_done"].append(args.fid)
+
+    elif args.action == "file-clean":
+        if args.fid and args.fid not in loop_data["files_clean"]:
+            loop_data["files_clean"].append(args.fid)
+
+    elif args.action == "end-loop":
+        loop_data["status"] = "completed"
+
+    _save_progress(progress)
+    print(f"Progress updated: loop={loop_key} action={args.action}")
+
+
+def cmd_progress_complete(_args: argparse.Namespace) -> None:
+    """Mark the entire pipeline as completed."""
+    progress = _load_progress()
+    if not progress:
+        print("ERROR: rck-progress.json not found.", file=sys.stderr)
+        sys.exit(1)
+
+    progress["status"] = "completed"
+    progress["committed"] = True
+    _save_progress(progress)
+    print("Pipeline marked as completed")
+
+
+def cmd_progress_status(_args: argparse.Namespace) -> None:
+    """Print current progress as JSON for resume detection."""
+    progress = _load_progress()
+    if not progress:
+        print(json.dumps({"status": "not_found"}))
+        sys.exit(0)
+
+    # Enrich with summary
+    summary = {
+        "uid": progress.get("uid"),
+        "status": progress.get("status"),
+        "current_loop": progress.get("current_loop"),
+        "current_iter": progress.get("current_iter"),
+        "committed": progress.get("committed", False),
+        "loops_summary": {},
+    }
+    for lp, data in progress.get("loops", {}).items():
+        summary["loops_summary"][lp] = {
+            "status": data.get("status"),
+            "files_done": len(data.get("files_done", [])),
+            "files_clean": len(data.get("files_clean", [])),
+        }
+        if "iter" in data:
+            summary["loops_summary"][lp]["iter"] = data["iter"]
+
+    print(json.dumps(summary, indent=2))
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────
 
 
@@ -487,6 +647,21 @@ def main() -> None:
     p.add_argument("--loop", required=True)
     p.add_argument("--iter", required=True)
 
+    # Progress tracking subcommands
+    p = sub.add_parser("progress-init", help="Initialize rck-progress.json")
+
+    p = sub.add_parser("progress-update", help="Update pipeline progress")
+    p.add_argument("--loop", required=True, help="Loop number (1-4)")
+    p.add_argument("--action", required=True,
+                   choices=["start-loop", "start-iter", "file-done", "file-clean", "end-loop"],
+                   help="Action to record")
+    p.add_argument("--iter", help="Iteration number (for start-iter)")
+    p.add_argument("--fid", help="File ID (for file-done/file-clean)")
+
+    p = sub.add_parser("progress-complete", help="Mark pipeline as completed")
+
+    p = sub.add_parser("progress-status", help="Print current progress as JSON")
+
     args = parser.parse_args()
     {
         "init": cmd_init,
@@ -495,6 +670,10 @@ def main() -> None:
         "merge-loop": cmd_merge_loop,
         "merge-final": cmd_merge_final,
         "count-issues": cmd_count_issues,
+        "progress-init": cmd_progress_init,
+        "progress-update": cmd_progress_update,
+        "progress-complete": cmd_progress_complete,
+        "progress-status": cmd_progress_status,
     }[args.command](args)
 
 
