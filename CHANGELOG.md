@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Resolve mypy type errors in pipeline.py and resume-check.py
+## [2.1.1] - 2026-03-22
+
+### Bug Fixes
+
 - Ensure TLDR artifacts are gitignored in worktree projects
 - Also enforce TLDR gitignore inside worktree (belt-and-suspenders)
 - Make rechecker output visible to Claude and include report summaries
@@ -22,6 +27,7 @@ All notable changes to this project will be documented in this file.
 
 - Bump version to 2.1.0
 - Sync version to 2.1.0 in pyproject.toml and README badge
+- Bump version to 2.1.1
 ## [2.0.51] - 2026-03-22
 
 ### Bug Fixes
