@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Timestamps reflect exact moment each file is written
+## [2.0.49] - 2026-03-22
+
 ### Features
 
 - Consistent rck- naming convention across all files
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.49
 ## [2.0.48] - 2026-03-22
 
 ### Bug Fixes
