@@ -77,33 +77,95 @@ def _save_index(index: dict) -> None:
     INDEX_FILE.write_text(json.dumps(index, indent=2) + "\n")
 
 
+# Strict tag validation — the bracket content must match EXACTLY one of 3 forms.
+# The regex captures the full bracket group and validates its internal structure.
+# Any other combination (wrong order, missing middle, extra fields, wrong digit count) is rejected.
+#
+# Valid:
+#   [LP00001-IT00001-FID00001]  → file-level (all 3, correct order)
+#   [LP00001-IT00001]           → iteration-level (LP + IT only)
+#   [LP00001]                   → loop-level (LP only)
+#
+# Invalid (examples):
+#   [LP00002-FID00011]          → missing IT (can't skip middle)
+#   [IT00001-FID00120]          → missing LP (must start with LP)
+#   [FID00002-LP00003]          → wrong order
+#   [IT00001]                   → missing LP
+#   [FID00011]                  → missing LP and IT
+#   [IT00010-LP00001-FID00010]  → wrong order
+#   [LP00002-IT00001-FID00]     → FID has wrong digit count
+#   [LP00002-IT00001-FID000001] → FID has wrong digit count (6 digits)
+#
+# The regex extracts the bracket content and validates it as a whole string,
+# not as a substring search — preventing partial matches inside longer tags.
+_RE_BRACKET_TAG = re.compile(r"\[([^\]]+)\]")
+_VALID_FILE = re.compile(r"^LP\d{5}-IT\d{5}-FID\d{5}$")
+_VALID_ITER = re.compile(r"^LP\d{5}-IT\d{5}$")
+_VALID_LOOP = re.compile(r"^LP\d{5}$")
+
+
+def classify_report(filename: str) -> str | None:
+    """Classify a report filename by its bracket tag. Returns 'file', 'iteration', 'loop', or None.
+
+    Validates the ENTIRE bracket content against exactly 3 valid forms.
+    Any malformed, partial, wrong-order, or wrong-digit-count tag returns None.
+    """
+    m = _RE_BRACKET_TAG.search(filename)
+    if not m:
+        return None
+    tag_content = m.group(1)
+    if _VALID_FILE.match(tag_content):
+        return "file"
+    if _VALID_ITER.match(tag_content):
+        return "iteration"
+    if _VALID_LOOP.match(tag_content):
+        return "loop"
+    return None
+
+
 def _extract_fid(filename: str) -> str | None:
-    """Extract FIDxxxxx (exactly 5 digits) from a filename. Rejects FID with wrong digit count."""
-    m = re.search(r"FID(\d{5})(?!\d)", filename)
-    return m.group(0) if m else None
+    """Extract FIDxxxxx from a validated file-level tag only. Returns None for any other tag type."""
+    if classify_report(filename) != "file":
+        return None
+    m = _RE_BRACKET_TAG.search(filename)
+    if not m:
+        return None
+    tag_content = m.group(1)
+    fid_match = re.search(r"FID(\d{5})$", tag_content)
+    return f"FID{fid_match.group(1)}" if fid_match else None
 
 
 def _find_reports(directory: Path, loop: str, iter_: str | None, fid: str | None, suffix: str) -> list[Path]:
-    """Find report files by loop/iter/fid/suffix using regex (glob can't handle literal brackets)."""
-    parts = [re.escape(f"LP{int(loop):05d}")]
-    if iter_ is not None:
-        parts.append(re.escape(f"IT{int(iter_):05d}"))
-    if fid is not None:
-        parts.append(re.escape(fid))
-    # If fid is not specified, require FID followed by exactly 5 digits before closing bracket
-    if fid is None and iter_ is not None:
-        tag_pattern = r"\[" + "-".join(parts) + r"-FID\d{5}\]"
-    elif fid is None:
-        tag_pattern = r"\[" + "-".join(parts) + r"(-IT\d{5}(-FID\d{5})?)?\]"
+    """Find report files by loop/iter/fid/suffix. Strict tag validation — partial tags are rejected."""
+    lp = f"LP{int(loop):05d}"
+    if fid is not None and iter_ is not None:
+        # File-level: all 3 groups required
+        it = f"IT{int(iter_):05d}"
+        tag_pattern = re.compile(re.escape(f"[{lp}-{it}-{fid}]"))
+        expected_level = "file"
+    elif iter_ is not None:
+        # Search for file-level reports within a specific iteration (any FID)
+        it = f"IT{int(iter_):05d}"
+        tag_pattern = re.compile(re.escape(f"[{lp}-{it}-") + r"FID\d{5}\]")
+        expected_level = "file"
     else:
-        tag_pattern = r"\[" + "-".join(parts) + r"\]"
-    full_pattern = re.compile(r".*" + tag_pattern + r"-" + re.escape(suffix))
+        # Search for iteration-level or loop-level reports
+        tag_pattern = re.compile(re.escape(f"[{lp}") + r"[-\]]")
+        expected_level = None  # accept both
+    full_pattern = re.compile(r".*" + tag_pattern.pattern + r"-" + re.escape(suffix))
 
     results = []
     if directory.is_dir():
         for f in directory.iterdir():
-            if full_pattern.match(f.name):
-                results.append(f)
+            if not full_pattern.match(f.name):
+                continue
+            # Validate tag level — reject partial/malformed tags
+            level = classify_report(f.name)
+            if expected_level is not None and level != expected_level:
+                continue
+            if level is None:
+                continue  # no valid tag at all
+            results.append(f)
     return sorted(results)
 
 

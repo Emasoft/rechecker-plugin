@@ -312,6 +312,61 @@ def test_extract_fid():
     assert pipeline._extract_fid("rck-20260321_120000_abc123-[LP00001-IT00001-FID00042]-fix.md") == "FID00042"
     assert pipeline._extract_fid("rck-20260321_120000_abc123-[LP00001-IT00001-FID00001]-review.json") == "FID00001"
     assert pipeline._extract_fid("no-fid-here.md") is None
+    # FID extraction only works on file-level tags
+    assert pipeline._extract_fid("rck-...-[LP00001-IT00001]-iteration.md") is None
+    assert pipeline._extract_fid("rck-...-[LP00001]-loop.md") is None
+
+
+def test_classify_valid_tags():
+    """Valid tags are correctly classified as file, iteration, or loop."""
+    c = pipeline.classify_report
+    # File-level: all 3 groups
+    assert c("rck-20260321_120000_abc123-[LP00001-IT00001-FID00001]-fix.md") == "file"
+    assert c("rck-20260321_120000_abc123-[LP00002-IT00006-FID00999]-review.json") == "file"
+    assert c("rck-20260321_120000_abc123-[LP99999-IT99999-FID99999]-fix.md") == "file"
+    # Iteration-level: LP + IT only
+    assert c("rck-20260321_120000_abc123-[LP00001-IT00001]-iteration.md") == "iteration"
+    assert c("rck-20260321_120000_abc123-[LP00002-IT00006]-iteration.md") == "iteration"
+    # Loop-level: LP only
+    assert c("rck-20260321_120000_abc123-[LP00001]-loop.md") == "loop"
+    assert c("rck-20260321_120000_abc123-[LP00004]-loop.md") == "loop"
+
+
+def test_classify_invalid_tags():
+    """Invalid tag combinations are rejected (return None)."""
+    c = pipeline.classify_report
+    # Missing LP (must always start with LP)
+    assert c("rck-...-[IT00001-FID00120]-fix.md") is None
+    assert c("rck-...-[IT00001]-iteration.md") is None
+    assert c("rck-...-[FID00011]-fix.md") is None
+    # Wrong order
+    assert c("rck-...-[FID00002-LP00003]-fix.md") is None
+    assert c("rck-...-[IT00010-LP00001-FID00010]-fix.md") is None
+    assert c("rck-...-[FID00001-IT00001-LP00001]-fix.md") is None
+    assert c("rck-...-[LP00001-FID00001-IT00001]-fix.md") is None
+    # Skipping middle (LP+FID without IT)
+    assert c("rck-...-[LP00002-FID00011]-fix.md") is None
+    # Wrong digit count (too few)
+    assert c("rck-...-[LP00002-IT00001-FID00]-fix.md") is None
+    assert c("rck-...-[LP00002-IT00001-FID0001]-fix.md") is None
+    assert c("rck-...-[LP0002-IT00001-FID00001]-fix.md") is None
+    assert c("rck-...-[LP00002-IT0001-FID00001]-fix.md") is None
+    # Wrong digit count (too many)
+    assert c("rck-...-[LP00002-IT00001-FID000001]-fix.md") is None
+    assert c("rck-...-[LP000002-IT00001-FID00001]-fix.md") is None
+    assert c("rck-...-[LP00002-IT000001-FID00001]-fix.md") is None
+    # Empty brackets
+    assert c("rck-...-[]-fix.md") is None
+    # No brackets at all
+    assert c("rck-...-fix.md") is None
+    assert c("no-tag-here.md") is None
+    # Garbage inside brackets
+    assert c("rck-...-[GARBAGE]-fix.md") is None
+    assert c("rck-...-[LP00001-JUNK-FID00001]-fix.md") is None
+    # Partial prefixes
+    assert c("rck-...-[LP00001-IT]-fix.md") is None
+    assert c("rck-...-[LP00001-IT00001-FID]-fix.md") is None
+    assert c("rck-...-[LP-IT00001-FID00001]-fix.md") is None
 
 
 def test_small_files_pack_to_10_when_needed():
