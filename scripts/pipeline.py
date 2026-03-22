@@ -409,17 +409,35 @@ def cmd_merge_final(args: argparse.Namespace) -> None:
 
     # Cleanup intermediate files unless --keep
     if not args.keep:
-        for pattern in ["*-review.json", "*-fix.md", "*-iteration.md", "*-loop.md"]:
+        for pattern in ["*-review.json", "*-review.md", "*-fix.md", "*-iteration.md", "*-loop.md"]:
             for f in REPORTS_DIR.glob(pattern):
                 f.unlink()
 
 
 def cmd_count_issues(args: argparse.Namespace) -> None:
-    """Count total issues in review reports for a loop/iteration. Prints count. Exit 1 if >0."""
-    review_reports = _find_reports(REPORTS_DIR, args.loop, args.iter, None, "review.json")
+    """Count total issues in review reports for a loop/iteration. Prints count. Exit 1 if >0.
 
+    Supports both formats:
+    - Markdown reviews (.md): counts ### BUG: and ### ISSUE: headers
+    - JSON reviews (.json): counts array elements (legacy format)
+    A report containing 'NO ISSUES FOUND' is treated as 0 issues.
+    """
     total = 0
-    for report in review_reports:
+
+    # Check markdown review reports
+    md_reports = _find_reports(REPORTS_DIR, args.loop, args.iter, None, "review.md")
+    for report in md_reports:
+        try:
+            content = report.read_text()
+            if "NO ISSUES FOUND" in content:
+                continue
+            total += content.count("### BUG:") + content.count("### ISSUE:")
+        except OSError:
+            pass
+
+    # Also check JSON review reports (legacy/fallback)
+    json_reports = _find_reports(REPORTS_DIR, args.loop, args.iter, None, "review.json")
+    for report in json_reports:
         try:
             data = json.loads(report.read_text())
             if isinstance(data, list):

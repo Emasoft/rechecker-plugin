@@ -80,53 +80,50 @@ If lint errors found:
 Tool: mcp__plugin_llm-externalizer_llm-externalizer__code_task
 Parameters:
   instructions: |
-    Analyze the source code below for correctness bugs. Examine every line for:
-    - Logic errors: off-by-one, wrong comparisons, inverted conditions
-    - Null/undefined handling: missing null checks, potential crashes
-    - Type mismatches: wrong types, implicit conversions that lose data
-    - Edge cases: empty inputs, boundary values, negative numbers
-    - Race conditions: concurrent access without synchronization
-    - Resource leaks: unclosed files, connections, missing cleanup
-    - Security: injection, path traversal, hardcoded secrets
-    - Error handling: swallowed exceptions, empty catch blocks
-    - API contracts: wrong parameter order, missing return values
-    - Dead code: unreachable statements, unused variables
-    - Copy-paste errors: duplicated code with forgotten updates
-    - Import errors: missing imports, wrong module paths
-    - Scoping errors: variable shadowing, wrong closure captures
+    Analyze the source code below for correctness bugs. Check for logic errors,
+    null/undefined handling, type mismatches, edge cases, race conditions,
+    resource leaks, security issues, error handling, API contract violations,
+    dead code, copy-paste errors, import errors, and scoping issues.
 
     Do NOT report style issues or performance suggestions.
 
-    IMPORTANT: Do NOT use line numbers — you receive code without line numbers
-    and counting lines is unreliable. Instead, identify the location by:
-    - The function/method/class name where the bug is
-    - A short quote of the exact buggy code (1-3 lines)
+    For each bug found, identify its location by quoting the relevant code
+    and naming the enclosing scope (function, class, module-level, etc.).
+    Do NOT use line numbers — you receive code without line numbers and
+    counting is unreliable. Instead use any clear reference: symbol names,
+    code quotes, surrounding context — whatever makes the location unambiguous.
 
-    Respond with ONLY a JSON array (no markdown, no explanation):
-    [{"file": "FILENAME", "function": "FUNCTION_NAME", "code": "EXACT BUGGY CODE QUOTE", "severity": "critical|high|medium|low", "description": "WHAT IS WRONG AND HOW TO FIX IT"}]
-    If no issues, respond with: []
+    Report each bug with its severity (critical/high/medium/low), a description
+    of what is wrong, and how to fix it.
+
+    Respond in markdown. For each bug use this format:
+
+    ### BUG: <short title>
+    **Severity**: critical|high|medium|low
+    **Location**: <scope/symbol/code quote that identifies where>
+    **Problem**: <what is wrong>
+    **Fix**: <how to fix it>
+
+    If no bugs found, respond with exactly: NO ISSUES FOUND
   input_files_paths: "<source file path>"
   ensemble: false
   max_tokens: 4000
 ```
 
 2. The tool returns a file path to the output .md file. Read it.
-   The content may have markdown wrapping — extract the JSON array from it.
-3. Save the extracted JSON to:
-   `.rechecker/reports/rck-{TS}_{UID}-[LP00002-IT{N:05d}-FID{ID:05d}]-review.json`
-4. After all files are reviewed, count total issues:
-```bash
-python3 scripts/pipeline.py count-issues --loop 2 --iter {N}
-```
-5. If 0 issues (exit code 0) → exit loop, go to Step 3.
+3. Copy the output file to:
+   `.rechecker/reports/rck-{TS}_{UID}-[LP00002-IT{N:05d}-FID{ID:05d}]-review.md`
+4. Check the content: if it contains "NO ISSUES FOUND", this file is clean.
+   Otherwise, count the `### BUG:` headers to know how many issues were found.
+5. After all files are reviewed, if ALL reviews say "NO ISSUES FOUND" → exit loop, go to Step 3.
 6. Launch SCF swarm (one per file with issues, parallel). Each SCF prompt:
-   `"Fix bugs in: {file} — Read findings from: .rechecker/reports/rck-...review.json"`
+   `"Fix bugs in: {file} — Read findings from: .rechecker/reports/rck-...-review.md"`
    `subagent_type: "sonnet-code-fixer"`, `model: "sonnet"`
 7. Merge fix reports for this iteration:
 ```bash
 python3 scripts/pipeline.py merge-iteration --loop 2 --iter {N}
 ```
-8. Increment N. Repeat from step 1. Max 5 passes. **DO NOT COMMIT.**
+8. Increment N. Repeat from step 1. Max 30 passes. **DO NOT COMMIT.**
 
 9. After loop ends, merge all iteration reports:
 ```bash
@@ -154,50 +151,50 @@ Parameters:
   instructions: |
     The commit message for this code change was: "${COMMIT_MSG}"
 
-    Analyze the source code below to verify it actually does what it claims.
-    Determine the INTENT of each function/class/module from its name,
-    docstrings, comments, and the commit message above.
-    Then check if the code implements that intent correctly:
-    - Intent mismatch: function says "validate X" but just returns True
-    - Incomplete implementation: TODO/FIXME/HACK, stubs, placeholders
-    - Wrong behavior: algorithm produces wrong results for stated purpose
-    - Missing cases: only handles happy path, ignores edge cases
-    - Broken contracts: doesn't return what signature/docs promise
-    - Silent failures: errors swallowed, appears to succeed but doesn't
-    - Side effect mismatch: undocumented side effects
-    - Integration drift: wrong API arguments, stale module names
-    - Assumption violations: assumes preconditions callers don't guarantee
+    Analyze the source code below to verify it does what it claims to do.
+    Determine the INTENT of each part from names, docstrings, comments,
+    and the commit message. Then check if the code actually implements
+    that intent. Look for intent mismatches, incomplete implementations,
+    wrong behavior, missing cases, broken contracts, silent failures,
+    undocumented side effects, stale API usage, and wrong assumptions.
 
     Do NOT check syntax, types, or style.
 
-    IMPORTANT: Do NOT use line numbers — you receive code without line numbers
-    and counting lines is unreliable. Instead, identify the location by:
-    - The function/method/class name where the issue is
-    - A short quote of the exact problematic code (1-3 lines)
+    For each issue found, identify its location by quoting the relevant code
+    and naming the enclosing scope. Do NOT use line numbers — use symbol names,
+    code quotes, or any clear reference that makes the location unambiguous.
 
-    Respond with ONLY a JSON array (no markdown, no explanation):
-    [{"file": "FILENAME", "function": "FUNCTION_NAME", "code": "EXACT CODE QUOTE", "severity": "critical|high|medium|low", "intent": "WHAT IT SHOULD DO", "reality": "WHAT IT ACTUALLY DOES"}]
-    If no issues, respond with: []
+    Report each issue with its severity (critical/high/medium/low), what the
+    code is supposed to do (intent), and what it actually does (reality).
+
+    Respond in markdown. For each issue use this format:
+
+    ### ISSUE: <short title>
+    **Severity**: critical|high|medium|low
+    **Location**: <scope/symbol/code quote that identifies where>
+    **Intent**: <what it should do>
+    **Reality**: <what it actually does>
+
+    If no issues found, respond with exactly: NO ISSUES FOUND
   input_files_paths: "<source file path>"
   ensemble: false
   max_tokens: 4000
 ```
 
 2. The tool returns a file path to the output .md file. Read it.
-   The content may have markdown wrapping — extract the JSON array from it.
-   Save the extracted JSON to:
-   `.rechecker/reports/rck-{TS}_{UID}-[LP00003-IT{N:05d}-FID{ID:05d}]-review.json`
-3. Count issues:
-```bash
-python3 scripts/pipeline.py count-issues --loop 3 --iter {N}
-```
-4. If 0 → exit loop, go to Step 4.
-5. Launch SCF swarm for files with issues (same as Loop 2 fix phase).
+3. Copy the output file to:
+   `.rechecker/reports/rck-{TS}_{UID}-[LP00003-IT{N:05d}-FID{ID:05d}]-review.md`
+4. Check the content: if it contains "NO ISSUES FOUND", this file is clean.
+   Otherwise, count the `### ISSUE:` headers to know how many issues were found.
+5. If ALL reviews say "NO ISSUES FOUND" → exit loop, go to Step 4.
+6. Launch SCF swarm for files with issues. Each SCF prompt:
+   `"Fix issues in: {file} — Read findings from: .rechecker/reports/rck-...-review.md"`
+   `subagent_type: "sonnet-code-fixer"`, `model: "sonnet"`
 6. Merge fix reports:
 ```bash
 python3 scripts/pipeline.py merge-iteration --loop 3 --iter {N}
 ```
-7. Increment N. Repeat. Max 5 passes. **DO NOT COMMIT.**
+7. Increment N. Repeat. Max 30 passes. **DO NOT COMMIT.**
 
 8. After loop ends:
 ```bash
@@ -232,10 +229,10 @@ If no changes to commit (code was already clean), skip the commit. Exit.
 - **File ownership**: Each review/fix handles exclusive files. No overlapping.
 - **Data flow**: ALL data exchange via files. Never pass findings inline — only file paths.
 - **Parallel execution**: You can call the externalizer MCP for multiple files in parallel (up to 5 concurrent calls on OpenRouter). Spawn fix agent swarms in parallel.
-- **Max passes**: 30 per loop. If doesn't converge, note in report and move on.
+- **Max passes**: 5 per loop. If doesn't converge, note in report and move on.
 - **No commits until Step 6.**
 - **Externalizer constraints**: The externalizer model has NO tools, NO file access. It receives file content inline in markdown backticks. Each request is independent — the model cannot see other files from other requests. You must embed any context (like the commit message) directly in the `instructions` parameter.
-- **JSON extraction**: The externalizer output is a .md file. The content may be wrapped in markdown code blocks (```json ... ```). Extract the JSON array by finding `[` ... `]`. If the output is not valid JSON, treat it as 0 issues for that file and note it in the final report.
+- **Review output format**: The externalizer returns markdown with `### BUG:` or `### ISSUE:` sections. Check for "NO ISSUES FOUND" to determine if a file is clean. Copy the output .md directly to `.rechecker/reports/` — no JSON extraction needed.
 
 ## Completion Checklist
 

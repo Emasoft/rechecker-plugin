@@ -21,16 +21,12 @@ For lint fixes, you get the lint output file instead:
 ## Protocol
 
 1. Read the findings file path from your prompt.
-2. Read the findings JSON file. It contains an array. Each finding identifies the
-   location by **function name** and a **code quote** (not line numbers):
-   ```json
-   [{"file": "src/utils.py", "function": "parse_config", "code": "return config[key]", "severity": "critical", "description": "Missing key check — raises KeyError"}]
-   ```
-   Functionality findings use `intent`/`reality` instead of `description`:
-   ```json
-   [{"file": "src/utils.py", "function": "validate_input", "code": "return True", "severity": "high", "intent": "validate user input", "reality": "always returns True"}]
-   ```
-   For lint fixes, read the lint output text file instead.
+2. Read the findings file. It can be either:
+   **Markdown review** (from code/functionality review): contains `### BUG:` or
+   `### ISSUE:` sections with severity, location (symbol names, code quotes),
+   problem description, and suggested fix.
+   **Lint output** (from linter): plain text with file paths, line numbers, and error messages.
+   Read whichever format is provided and understand all the issues listed.
 3. For each finding:
    a. Read the FULL source file.
    b. Find the exact location by searching for the `function` name and the `code` quote.
