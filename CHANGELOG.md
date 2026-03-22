@@ -4,9 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Collect report from worktree dir after headless orchestrator exit
+## [2.0.45] - 2026-03-21
+
 ### Miscellaneous Tasks
 
 - Update uv.lock
+- Bump version to 2.0.45
 ## [2.0.44] - 2026-03-21
 
 ### Bug Fixes
