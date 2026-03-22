@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Consistent rck- naming convention across all files
+## [2.0.48] - 2026-03-22
+
 ### Bug Fixes
 
 - Hook writes RECHECKER_MERGE_PENDING.md for Claude + systemMessage for user
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.48
 ## [2.0.47] - 2026-03-22
 
 ### Bug Fixes
