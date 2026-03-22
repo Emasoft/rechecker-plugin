@@ -66,9 +66,9 @@ def _find_merge_pending(project_dir: str) -> list[dict]:
     return results
 
 
-def _find_incomplete_worktrees(project_dir: str) -> list[dict]:
+def _find_incomplete_worktrees(project_dir: str) -> list[dict[str, object]]:
     """Find rechecker worktrees that started but never completed."""
-    results = []
+    results: list[dict[str, object]] = []
 
     # List all worktrees
     try:

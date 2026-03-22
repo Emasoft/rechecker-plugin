@@ -69,11 +69,12 @@ def _file_size(path: Path) -> int:
         return 0
 
 
-def _load_index() -> dict:
+def _load_index() -> dict:  # type: ignore[type-arg]
     if not INDEX_FILE.exists():
         print("ERROR: .rechecker/index.json not found. Run 'init' first.", file=sys.stderr)
         sys.exit(1)
-    return json.loads(INDEX_FILE.read_text())
+    result: dict = json.loads(INDEX_FILE.read_text())  # type: ignore[type-arg]
+    return result
 
 
 def _save_index(index: dict) -> None:
@@ -99,10 +100,11 @@ def _atomic_write_json(path: Path, data: dict) -> None:
         raise
 
 
-def _load_progress() -> dict:
+def _load_progress() -> dict:  # type: ignore[type-arg]
     if not PROGRESS_FILE.exists():
         return {}
-    return json.loads(PROGRESS_FILE.read_text())
+    result: dict = json.loads(PROGRESS_FILE.read_text())  # type: ignore[type-arg]
+    return result
 
 
 def _save_progress(progress: dict) -> None:
@@ -324,9 +326,9 @@ def cmd_init(args: argparse.Namespace) -> None:
     small_count = sum(1 for f in files.values() if f["category"] == "small")
     print(f"Initialized: {len(files)} files, {len(all_groups)} groups, {len(macro_groups)} macro-group(s)")
     print(f"  Big: {big_count}, Small: {small_count}")
-    for mg_id, mg_gids in macro_groups.items():
+    for mg_key, mg_gids in macro_groups.items():
         file_count = sum(len(all_groups[g]) for g in mg_gids)
-        print(f"  {mg_id}: {len(mg_gids)} groups, {file_count} files")
+        print(f"  {mg_key}: {len(mg_gids)} groups, {file_count} files")
 
 
 def cmd_groups(args: argparse.Namespace) -> None:
