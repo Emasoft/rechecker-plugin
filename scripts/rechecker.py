@@ -215,7 +215,7 @@ def main() -> None:
             f"If there are conflicts, resolve them and commit.\n"
             f"Then delete this file.\n"
         )
-        _log(f"  wrote RECHECKER_MERGE_PENDING.md — main Claude will merge when ready")
+        _log("  wrote RECHECKER_MERGE_PENDING.md — main Claude will merge when ready")
 
     _flush_log(cwd)
 
