@@ -246,21 +246,31 @@ def main() -> None:
         _log(f"  claude exit code: {result.returncode}")
 
         # Copy report from worktree to reports_dev/
+        # The final report can be in multiple locations depending on where
+        # the orchestrator wrote it or if it was interrupted:
+        #   1. worktree root: rck-*-report.md (normal completion)
+        #   2. worktree/reports_dev/: rck-*-report.md (alternative)
+        #   3. worktree/.rechecker/reports/: *-loop.md (partial — loops completed but not merged)
         wt_dir = Path(root) / ".claude" / "worktrees" / wt_name
         report_path = ""
         if wt_dir.is_dir():
-            for report in wt_dir.glob("rck-*-report.md"):
-                dest = reports_dev / _rck_name("report", "md")
-                shutil.copy2(str(report), str(dest))
-                report_path = str(dest)
-                _log(f"  copied report -> {dest.name}")
-            wt_reports = wt_dir / "reports_dev"
-            if wt_reports.is_dir() and not report_path:
-                for report in wt_reports.glob("rck-*-report.md"):
+            # Search locations in priority order
+            search_dirs = [
+                wt_dir,                         # worktree root
+                wt_dir / "reports_dev",         # reports_dev inside worktree
+                wt_dir / ".rechecker" / "reports",  # intermediate reports
+            ]
+            for search_dir in search_dirs:
+                if report_path:
+                    break
+                if not search_dir.is_dir():
+                    continue
+                for report in sorted(search_dir.glob("rck-*-report.md")):
                     dest = reports_dev / _rck_name("report", "md")
                     shutil.copy2(str(report), str(dest))
                     report_path = str(dest)
                     _log(f"  copied report -> {dest.name}")
+                    break  # take only the first (most recent) report
 
         results.append({
             "root": root,
@@ -285,11 +295,24 @@ def main() -> None:
         ]
         if r["report"]:
             merge_lines.append(f"- **Report**: `{r['report']}`")
+            merge_lines.append("")
+            merge_lines.append("### Report Summary")
+            merge_lines.append("")
+            # Inline a brief excerpt from the report so Claude sees it immediately
+            try:
+                report_text = Path(r["report"]).read_text()
+                # Extract first 30 lines or up to 2000 chars as summary
+                summary = "\n".join(report_text.splitlines()[:30])
+                if len(summary) > 2000:
+                    summary = summary[:2000] + "\n... (truncated, read full report)"
+                merge_lines.append(summary)
+            except OSError:
+                merge_lines.append("(report file not readable)")
         merge_lines.extend([
             "",
             "## What you must do",
             "",
-            "When you finish your current task, merge all rechecker fixes at once:",
+            "**Read the full report** at the path above, then merge all rechecker fixes at once:",
             "",
             "```bash",
             f'cd "{r["root"]}" && bash .rechecker/merge-worktrees.sh',
@@ -312,14 +335,42 @@ def main() -> None:
         notice_path.write_text("\n".join(merge_lines) + "\n")
         _log(f"  wrote {notice_path}")
 
-    # Output systemMessage for the USER to see in the terminal
-    user_parts = ["Rechecker completed."]
+    # Build context for Claude (additionalContext) AND user (systemMessage)
+    context_lines = [
+        "## Rechecker: Review Complete — Action Required",
+        "",
+    ]
+    has_fixes = False
     for r in results:
-        user_parts.append(f"Fixes on branch: {r['branch']}")
         if r["report"]:
-            user_parts.append(f"Report: {r['report']}")
-    user_parts.append("See rck-*-merge-pending.md for merge instructions.")
-    print(json.dumps({"systemMessage": " ".join(user_parts)}))
+            context_lines.append(f"- **{r['wt_name']}**: fixes on branch `{r['branch']}`. Report: `{r['report']}`")
+            has_fixes = True
+        else:
+            context_lines.append(f"- **{r['wt_name']}**: no issues found (branch `{r['branch']}`)")
+
+    if has_fixes:
+        git_root = results[0]["root"]
+        context_lines.extend([
+            "",
+            "Merge all rechecker fixes at once:",
+            "",
+            "```bash",
+            f'cd "{git_root}" && bash .rechecker/merge-worktrees.sh',
+            "```",
+            "",
+            "Or read individual reports first, then merge selectively.",
+        ])
+
+    context_msg = "\n".join(context_lines)
+
+    # Output both additionalContext (for Claude) and systemMessage (for user terminal)
+    output = {
+        "hookSpecificOutput": {
+            "additionalContext": context_msg,
+        },
+        "systemMessage": f"Rechecker done: {len(results)} branch(es) reviewed. Run: bash .rechecker/merge-worktrees.sh",
+    }
+    print(json.dumps(output))
 
     _flush_log(cwd)
 
