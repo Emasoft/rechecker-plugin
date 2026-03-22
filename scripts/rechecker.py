@@ -134,7 +134,7 @@ def main() -> None:
         or os.environ.get("CLAUDE_PROJECT_DIR", "")
         or os.getcwd()
     )
-    _log(f"--- git commit detected ---")
+    _log("--- git commit detected ---")
     _log(f"cwd={cwd} command={command[:200]}")
 
     # CRITICAL: prevent recursive triggering — if we're inside a rechecker worktree, skip
