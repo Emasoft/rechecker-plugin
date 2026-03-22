@@ -6,7 +6,28 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Strict FID validation — exactly 5 digits required after FID prefix
+- Strict tag validation — reject all invalid bracket combinations
+- Prevent recursive triggering + reduce token consumption
+- Adapt externalizer instructions for its actual capabilities
+- Use function names + code quotes instead of line numbers in reviews
+- Free-form markdown reviews instead of rigid JSON format
+- Bugs found by LLM Externalizer code review
+- Remove extraneous f-prefix (ruff F541)
+
+### Features
+
+- Add pipeline.py for file grouping, report merging, and issue counting
+- Use LLM Externalizer for code reviews instead of opus agents
+## [2.0.50] - 2026-03-22
+
+### Bug Fixes
+
 - Timestamps reflect exact moment each file is written
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.50
 ## [2.0.49] - 2026-03-22
 
 ### Features
