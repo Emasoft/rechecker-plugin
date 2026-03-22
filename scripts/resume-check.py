@@ -192,7 +192,14 @@ def main() -> None:
         if valid:
             lines.append(f"### {len(valid)} merge(s) ready")
             lines.append("")
-            lines.append("The rechecker reviewed your commits and produced fixes. Merge them:")
+            lines.append("The rechecker reviewed your commits and produced fixes.")
+            lines.append("Merge all at once:")
+            lines.append("")
+            lines.append("```bash")
+            lines.append(f'cd "{project_dir}" && bash .rechecker/merge-worktrees.sh')
+            lines.append("```")
+            lines.append("")
+            lines.append("Or merge individually:")
             lines.append("")
             for m in valid:
                 lines.append(f"```bash")

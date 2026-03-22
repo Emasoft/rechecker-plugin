@@ -200,9 +200,21 @@ def main() -> None:
     # Track results for all repos to build the final message
     results: list[dict[str, str]] = []
 
+    # Resolve plugin root once (for copying bundled scripts)
+    plugin_root = Path(os.environ.get("CLAUDE_PLUGIN_ROOT", "")) or Path(__file__).resolve().parent.parent
+
     for root in git_roots:
         # Ensure TLDR artifacts won't pollute worktree commits
         _ensure_tldr_gitignored(root)
+
+        # Copy merge script into .rechecker/ so Claude can find it without CLAUDE_PLUGIN_ROOT
+        rechecker_dir = Path(root) / ".rechecker"
+        rechecker_dir.mkdir(parents=True, exist_ok=True)
+        merge_src = plugin_root / "scripts" / "merge-worktrees.sh"
+        merge_dst = rechecker_dir / "merge-worktrees.sh"
+        if merge_src.is_file():
+            shutil.copy2(str(merge_src), str(merge_dst))
+            merge_dst.chmod(0o755)
 
         # 6-char uuid ties all files from this run together
         uid = uuid.uuid4().hex[:6]
@@ -277,7 +289,13 @@ def main() -> None:
             "",
             "## What you must do",
             "",
-            "When you finish your current task, merge the fixes and resolve any conflicts:",
+            "When you finish your current task, merge all rechecker fixes at once:",
+            "",
+            "```bash",
+            f'cd "{r["root"]}" && bash .rechecker/merge-worktrees.sh',
+            "```",
+            "",
+            "Or merge this branch individually:",
             "",
             "```bash",
             f'cd "{r["root"]}" && git merge {r["branch"]} --no-edit',
