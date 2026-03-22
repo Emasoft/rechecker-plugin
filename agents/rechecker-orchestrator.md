@@ -72,38 +72,42 @@ If lint errors found:
 
 **Pass N (iteration IT{N}):**
 
-1. For each file, call the LLM Externalizer to review it:
+1. For each file, call the LLM Externalizer to review it.
+   **Important**: The externalizer model receives the file content inline (in markdown backticks).
+   It has NO tools, NO file access, NO ability to read other files. Each request is independent.
+   The model returns text which the MCP server saves as a .md file.
 ```
 Tool: mcp__plugin_llm-externalizer_llm-externalizer__code_task
 Parameters:
   instructions: |
-    You are a code reviewer specialized in correctness. Examine EVERY line for:
-    - Logic errors: off-by-one, wrong comparisons, inverted conditions, incorrect boolean logic
-    - Null/undefined handling: missing null checks, potential crashes, unhandled None/nil
-    - Type mismatches: wrong types passed to functions, implicit conversions that lose data
-    - Edge cases: empty inputs, boundary values, negative numbers, empty strings/arrays
-    - Race conditions: concurrent access without synchronization, TOCTOU bugs
-    - Resource leaks: unclosed files, connections, streams, missing cleanup in finally/defer
-    - Security: injection vulnerabilities, path traversal, hardcoded secrets, insecure defaults
-    - Error handling: swallowed exceptions, empty catch blocks, missing error propagation
-    - API contracts: breaking changes, missing return values, wrong parameter order, wrong types
-    - Dead code: unreachable statements, unused variables, broken references
-    - Copy-paste errors: duplicated code with forgotten updates, stale variable names
-    - Import errors: missing imports, wrong module paths, stale references after refactoring
-    - Scoping errors: variable shadowing, wrong closure captures, unintended global state
+    Analyze the source code below for correctness bugs. Examine every line for:
+    - Logic errors: off-by-one, wrong comparisons, inverted conditions
+    - Null/undefined handling: missing null checks, potential crashes
+    - Type mismatches: wrong types, implicit conversions that lose data
+    - Edge cases: empty inputs, boundary values, negative numbers
+    - Race conditions: concurrent access without synchronization
+    - Resource leaks: unclosed files, connections, missing cleanup
+    - Security: injection, path traversal, hardcoded secrets
+    - Error handling: swallowed exceptions, empty catch blocks
+    - API contracts: wrong parameter order, missing return values
+    - Dead code: unreachable statements, unused variables
+    - Copy-paste errors: duplicated code with forgotten updates
+    - Import errors: missing imports, wrong module paths
+    - Scoping errors: variable shadowing, wrong closure captures
 
-    Do NOT report style issues or performance suggestions unless algorithmic.
+    Do NOT report style issues or performance suggestions.
 
-    OUTPUT FORMAT — you MUST output ONLY a valid JSON array, nothing else:
-    [{"file": "<path>", "line": <number>, "severity": "critical|high|medium|low", "description": "<what is wrong>"}]
-    If no issues found, output exactly: []
+    Respond with ONLY a JSON array (no markdown, no explanation):
+    [{"file": "FILENAME", "line": LINE_NUMBER, "severity": "critical|high|medium|low", "description": "WHAT IS WRONG"}]
+    If no issues, respond with: []
   input_files_paths: "<source file path>"
   ensemble: false
   max_tokens: 4000
 ```
 
-2. Read the output file path returned by the tool. Read its content.
-3. Extract the JSON array from the output. Save it to:
+2. The tool returns a file path to the output .md file. Read it.
+   The content may have markdown wrapping — extract the JSON array from it.
+3. Save the extracted JSON to:
    `.rechecker/reports/rck-{TS}_{UID}-[LP00002-IT{N:05d}-FID{ID:05d}]-review.json`
 4. After all files are reviewed, count total issues:
 ```bash
@@ -135,38 +139,43 @@ COMMIT_MSG=$(cat .rechecker/commit-message.txt)
 
 **Pass N (iteration IT{N}):**
 
-1. For each file, call the LLM Externalizer:
+1. For each file, call the LLM Externalizer.
+   **Important**: Same constraints as Loop 2 — the model only sees the file content inline,
+   has no tools, no file access. Each request is independent. You must embed the commit
+   message directly in the instructions (the model cannot read commit-message.txt).
 ```
 Tool: mcp__plugin_llm-externalizer_llm-externalizer__code_task
 Parameters:
   instructions: |
-    You are a functionality reviewer. The commit message for this change was:
-    "${COMMIT_MSG}"
+    The commit message for this code change was: "${COMMIT_MSG}"
 
-    Determine the INTENT of each function, class, and module using names,
-    docstrings, comments, variable names, the commit message, and surrounding code.
-    Then verify the code actually implements that intent. Check for:
+    Analyze the source code below to verify it actually does what it claims.
+    Determine the INTENT of each function/class/module from its name,
+    docstrings, comments, and the commit message above.
+    Then check if the code implements that intent correctly:
     - Intent mismatch: function says "validate X" but just returns True
-    - Incomplete implementation: TODO/FIXME/HACK, stub functions, placeholder values
+    - Incomplete implementation: TODO/FIXME/HACK, stubs, placeholders
     - Wrong behavior: algorithm produces wrong results for stated purpose
     - Missing cases: only handles happy path, ignores edge cases
-    - Broken contracts: function doesn't return what signature/docs promise
-    - Silent failures: errors swallowed, function appears to succeed but doesn't
-    - Side effect mismatch: undocumented side effects or missing documented ones
-    - Integration drift: wrong API arguments, stale module names after refactoring
-    - Assumption violations: code assumes preconditions callers don't guarantee
+    - Broken contracts: doesn't return what signature/docs promise
+    - Silent failures: errors swallowed, appears to succeed but doesn't
+    - Side effect mismatch: undocumented side effects
+    - Integration drift: wrong API arguments, stale module names
+    - Assumption violations: assumes preconditions callers don't guarantee
 
-    Do NOT check syntax or types. Do NOT check style.
+    Do NOT check syntax, types, or style.
 
-    OUTPUT FORMAT — you MUST output ONLY a valid JSON array, nothing else:
-    [{"file": "<path>", "line": <number>, "severity": "critical|high|medium|low", "intent": "<what it should do>", "reality": "<what it actually does>"}]
-    If no issues found, output exactly: []
+    Respond with ONLY a JSON array (no markdown, no explanation):
+    [{"file": "FILENAME", "line": LINE_NUMBER, "severity": "critical|high|medium|low", "intent": "WHAT IT SHOULD DO", "reality": "WHAT IT ACTUALLY DOES"}]
+    If no issues, respond with: []
   input_files_paths: "<source file path>"
   ensemble: false
   max_tokens: 4000
 ```
 
-2. Read the output file path. Read its content. Extract JSON. Save to:
+2. The tool returns a file path to the output .md file. Read it.
+   The content may have markdown wrapping — extract the JSON array from it.
+   Save the extracted JSON to:
    `.rechecker/reports/rck-{TS}_{UID}-[LP00003-IT{N:05d}-FID{ID:05d}]-review.json`
 3. Count issues:
 ```bash
@@ -215,7 +224,8 @@ If no changes to commit (code was already clean), skip the commit. Exit.
 - **Parallel execution**: You can call the externalizer MCP for multiple files in parallel (up to 5 concurrent calls on OpenRouter). Spawn fix agent swarms in parallel.
 - **Max passes**: 30 per loop. If doesn't converge, note in report and move on.
 - **No commits until Step 6.**
-- **JSON extraction**: The externalizer output may contain markdown wrapping around the JSON. Extract the JSON array from between `[` and `]` (or from a code block). If the output is not valid JSON, treat it as 0 issues for that file and note it in the report.
+- **Externalizer constraints**: The externalizer model has NO tools, NO file access. It receives file content inline in markdown backticks. Each request is independent — the model cannot see other files from other requests. You must embed any context (like the commit message) directly in the `instructions` parameter.
+- **JSON extraction**: The externalizer output is a .md file. The content may be wrapped in markdown code blocks (```json ... ```). Extract the JSON array by finding `[` ... `]`. If the output is not valid JSON, treat it as 0 issues for that file and note it in the final report.
 
 ## Completion Checklist
 
