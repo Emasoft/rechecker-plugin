@@ -97,8 +97,13 @@ Parameters:
 
     Do NOT report style issues or performance suggestions.
 
+    IMPORTANT: Do NOT use line numbers — you receive code without line numbers
+    and counting lines is unreliable. Instead, identify the location by:
+    - The function/method/class name where the bug is
+    - A short quote of the exact buggy code (1-3 lines)
+
     Respond with ONLY a JSON array (no markdown, no explanation):
-    [{"file": "FILENAME", "line": LINE_NUMBER, "severity": "critical|high|medium|low", "description": "WHAT IS WRONG"}]
+    [{"file": "FILENAME", "function": "FUNCTION_NAME", "code": "EXACT BUGGY CODE QUOTE", "severity": "critical|high|medium|low", "description": "WHAT IS WRONG AND HOW TO FIX IT"}]
     If no issues, respond with: []
   input_files_paths: "<source file path>"
   ensemble: false
@@ -165,8 +170,13 @@ Parameters:
 
     Do NOT check syntax, types, or style.
 
+    IMPORTANT: Do NOT use line numbers — you receive code without line numbers
+    and counting lines is unreliable. Instead, identify the location by:
+    - The function/method/class name where the issue is
+    - A short quote of the exact problematic code (1-3 lines)
+
     Respond with ONLY a JSON array (no markdown, no explanation):
-    [{"file": "FILENAME", "line": LINE_NUMBER, "severity": "critical|high|medium|low", "intent": "WHAT IT SHOULD DO", "reality": "WHAT IT ACTUALLY DOES"}]
+    [{"file": "FILENAME", "function": "FUNCTION_NAME", "code": "EXACT CODE QUOTE", "severity": "critical|high|medium|low", "intent": "WHAT IT SHOULD DO", "reality": "WHAT IT ACTUALLY DOES"}]
     If no issues, respond with: []
   input_files_paths: "<source file path>"
   ensemble: false

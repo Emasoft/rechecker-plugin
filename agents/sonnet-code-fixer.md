@@ -21,14 +21,20 @@ For lint fixes, you get the lint output file instead:
 ## Protocol
 
 1. Read the findings file path from your prompt.
-2. Read the findings JSON file. It contains an array:
+2. Read the findings JSON file. It contains an array. Each finding identifies the
+   location by **function name** and a **code quote** (not line numbers):
    ```json
-   [{"file": "src/utils.py", "line": 42, "severity": "critical", "description": "..."}]
+   [{"file": "src/utils.py", "function": "parse_config", "code": "return config[key]", "severity": "critical", "description": "Missing key check — raises KeyError"}]
+   ```
+   Functionality findings use `intent`/`reality` instead of `description`:
+   ```json
+   [{"file": "src/utils.py", "function": "validate_input", "code": "return True", "severity": "high", "intent": "validate user input", "reality": "always returns True"}]
    ```
    For lint fixes, read the lint output text file instead.
 3. For each finding:
-   a. Read the FULL source file (not just the affected line — you need context).
-   b. Understand the root cause.
+   a. Read the FULL source file.
+   b. Find the exact location by searching for the `function` name and the `code` quote.
+   c. Understand the root cause.
    c. Apply the minimal fix that properly resolves the issue.
    d. Check if the same pattern appears elsewhere in the file — fix all occurrences.
    e. Verify your fix doesn't break callers or dependents.
