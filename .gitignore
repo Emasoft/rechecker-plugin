@@ -1,5 +1,8 @@
 # Rechecker runtime artifacts
 .rechecker/
+rck-*-merge-pending.md
+
+# LLM Externalizer output
 llm_externalizer_output/
 
 # Dev folders (gitignored per convention)
@@ -12,6 +15,7 @@ tests_dev/
 downloads_dev/
 libs_dev/
 builds_dev/
+*_dev/
 
 # OS
 .DS_Store
@@ -37,12 +41,10 @@ build/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+uv.lock
 
 # Node
 node_modules/
-
-# Dev folders wildcard
-*_dev/
 
 # Mega-Linter
 megalinter-reports/
@@ -51,5 +53,11 @@ mega-linter.log
 # Claude Code local config
 .claude/
 CLAUDE.md
+
+# TLDR artifacts
 .tldr/
 .tldrignore
+.tldr_session_*
+
+# Test artifacts
+test_hook_trigger.txt

@@ -50,17 +50,36 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
 fi
 
 # Find all rechecker worktree branches (both naming conventions)
-WORKTREE_BRANCHES=$(git branch --list 'worktree-rck-*' 'worktree-rechecker-*' | sed 's/^[* ]*//' || true)
+# Strip leading markers: * (current), + (worktree checkout), spaces
+WORKTREE_BRANCHES=$(git branch --list 'worktree-rck-*' 'worktree-rechecker-*' | sed 's/^[+* ]*//' || true)
 
 if [ -z "$WORKTREE_BRANCHES" ]; then
   echo "No rechecker worktree branches found. Nothing to merge."
   exit 0
 fi
 
+# Remove worktrees FIRST — can't merge a branch that's checked out in a worktree
+echo ""
+echo "Removing worktrees before merge..."
+git worktree list --porcelain 2>/dev/null | {
+  wt_path=""
+  while IFS= read -r line; do
+    if [[ "$line" == "worktree "* ]]; then
+      wt_path="${line#worktree }"
+    elif [[ "$line" == "branch refs/heads/worktree-rck-"* ]] || [[ "$line" == "branch refs/heads/worktree-rechecker-"* ]]; then
+      if [ -n "${wt_path:-}" ] && [ -d "$wt_path" ]; then
+        git worktree remove "$wt_path" --force 2>/dev/null && echo "  Removed worktree: $wt_path" || echo "  Failed to remove: $wt_path"
+      fi
+    fi
+  done
+}
+# Prune stale worktree references
+git worktree prune 2>/dev/null
+
 BRANCH_COUNT=$(echo "$WORKTREE_BRANCHES" | wc -l | tr -d ' ')
 echo ""
 echo "Found $BRANCH_COUNT rechecker branch(es):"
-echo "$WORKTREE_BRANCHES" | while read -r branch; do
+for branch in $WORKTREE_BRANCHES; do
   commit=$(git log --oneline -1 "$branch" 2>/dev/null || echo "???")
   diff_stat=$(git diff --stat "$CURRENT_BRANCH...$branch" 2>/dev/null | tail -1)
   echo "  $branch  ($commit)"
@@ -139,19 +158,7 @@ if $NO_CLEANUP; then
   exit 0
 fi
 
-# Clean up worktrees
-echo ""
-echo "Cleaning up worktrees..."
-# Use git worktree list to find all worktree paths for rechecker branches
-git worktree list --porcelain 2>/dev/null | while IFS= read -r line; do
-  if [[ "$line" == "worktree "* ]]; then
-    wt_path="${line#worktree }"
-  elif [[ "$line" == "branch refs/heads/worktree-rck-"* ]] || [[ "$line" == "branch refs/heads/worktree-rechecker-"* ]]; then
-    if [ -n "${wt_path:-}" ] && [ -d "$wt_path" ]; then
-      git worktree remove "$wt_path" --force 2>/dev/null && echo "  Removed worktree: $wt_path" || echo "  Failed to remove: $wt_path"
-    fi
-  fi
-done
+# Worktrees already removed before merge step — just delete branches and files
 
 # Delete merged branches
 echo ""
