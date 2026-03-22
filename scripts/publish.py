@@ -286,10 +286,15 @@ def stage_tests(root: Path) -> None:
 
 
 def stage_lint(root: Path) -> None:
-    """Step 3: Lint with ruff."""
+    """Step 3: Lint with ruff + type check with mypy."""
     cprint(f"\n{BOLD}[3/9] Linting...{NC}")
     run(["uv", "run", "ruff", "check", "scripts/"], cwd=root)
-    cprint(f"  {GREEN}Lint passed.{NC}")
+    cprint(f"  {GREEN}Ruff passed.{NC}")
+    if shutil.which("mypy") or (root / ".venv").is_dir():
+        run(["uv", "run", "mypy", "scripts/", "--ignore-missing-imports"], cwd=root)
+        cprint(f"  {GREEN}Mypy passed.{NC}")
+    else:
+        cprint(f"  {YELLOW}mypy not available — skipping type check.{NC}")
 
 
 def stage_validate(root: Path) -> None:
