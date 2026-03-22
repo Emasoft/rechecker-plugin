@@ -181,20 +181,18 @@ def main() -> None:
             result = subprocess.run(cmd, cwd=root, stdout=subprocess.DEVNULL, stderr=stderr_f)
         _log(f"  claude exit code: {result.returncode}")
 
-        # Collect report from main tree (if worktree was merged)
-        for report in Path(root).glob("rechecker-report-*.md"):
-            report.rename(reports_dev / report.name)
-            _log(f"  moved report from main: {report.name}")
-
-        # Also collect report from worktree dir (headless mode doesn't merge)
+        # Do NOT merge here — the main Claude may be editing files right now.
+        # Instead, copy the report out and leave a notice for the main Claude
+        # to merge the worktree when it's ready.
+        branch_name = f"worktree-{wt_name}"
         wt_dir = Path(root) / ".claude" / "worktrees" / wt_name
+
+        # Copy report from worktree to reports_dev/ in the main tree
         if wt_dir.is_dir():
             for report in wt_dir.glob("rechecker-report-*.md"):
                 dest = reports_dev / report.name
-                if not dest.exists():
-                    shutil.copy2(str(report), str(dest))
-                    _log(f"  copied report from worktree: {report.name}")
-            # Also check reports_dev inside the worktree
+                shutil.copy2(str(report), str(dest))
+                _log(f"  copied report from worktree: {report.name}")
             wt_reports = wt_dir / "reports_dev"
             if wt_reports.is_dir():
                 for report in wt_reports.glob("rechecker-report-*.md"):
@@ -202,6 +200,22 @@ def main() -> None:
                     if not dest.exists():
                         shutil.copy2(str(report), str(dest))
                         _log(f"  copied report from worktree/reports_dev: {report.name}")
+
+        # Write a notice file for the main Claude to see
+        notice_file = Path(root) / "RECHECKER_MERGE_PENDING.md"
+        notice_file.write_text(
+            f"# Rechecker: Merge Pending\n\n"
+            f"The rechecker reviewed and fixed bugs on branch `{branch_name}`.\n"
+            f"The worktree is at: `.claude/worktrees/{wt_name}/`\n"
+            f"The report is at: `reports_dev/`\n\n"
+            f"**When you are done with your current task**, merge the fixes:\n"
+            f"```bash\n"
+            f"git merge {branch_name} --no-edit\n"
+            f"```\n"
+            f"If there are conflicts, resolve them and commit.\n"
+            f"Then delete this file.\n"
+        )
+        _log(f"  wrote RECHECKER_MERGE_PENDING.md — main Claude will merge when ready")
 
     _flush_log(cwd)
 
