@@ -78,8 +78,8 @@ def _save_index(index: dict) -> None:
 
 
 def _extract_fid(filename: str) -> str | None:
-    """Extract FIDxxxxx from a filename like rck-...-[LP00001-IT00001-FID00003]-fix.md"""
-    m = re.search(r"FID\d{5}", filename)
+    """Extract FIDxxxxx (exactly 5 digits) from a filename. Rejects FID with wrong digit count."""
+    m = re.search(r"FID(\d{5})(?!\d)", filename)
     return m.group(0) if m else None
 
 
@@ -90,8 +90,13 @@ def _find_reports(directory: Path, loop: str, iter_: str | None, fid: str | None
         parts.append(re.escape(f"IT{int(iter_):05d}"))
     if fid is not None:
         parts.append(re.escape(fid))
-    # If fid is not specified, allow any trailing content before the closing bracket
-    tag_pattern = r"\[" + "-".join(parts) + (r"[^\]]*\]" if fid is None else r"\]")
+    # If fid is not specified, require FID followed by exactly 5 digits before closing bracket
+    if fid is None and iter_ is not None:
+        tag_pattern = r"\[" + "-".join(parts) + r"-FID\d{5}\]"
+    elif fid is None:
+        tag_pattern = r"\[" + "-".join(parts) + r"(-IT\d{5}(-FID\d{5})?)?\]"
+    else:
+        tag_pattern = r"\[" + "-".join(parts) + r"\]"
     full_pattern = re.compile(r".*" + tag_pattern + r"-" + re.escape(suffix))
 
     results = []
