@@ -6,6 +6,26 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Ensure TLDR artifacts are gitignored in worktree projects
+- Also enforce TLDR gitignore inside worktree (belt-and-suspenders)
+- Make rechecker output visible to Claude and include report summaries
+- Update .gitignore and fix merge-worktrees.sh bugs
+- Remove extraneous f-prefix in resume-check.py (ruff F541)
+
+### Features
+
+- Add resume support for interrupted rechecker runs
+- Bundle merge-worktrees.sh and copy to .rechecker/ at runtime
+- Make merge-worktrees.sh fully standalone and self-cleaning
+
+### Miscellaneous Tasks
+
+- Bump version to 2.1.0
+- Sync version to 2.1.0 in pyproject.toml and README badge
+## [2.0.51] - 2026-03-22
+
+### Bug Fixes
+
 - Strict FID validation — exactly 5 digits required after FID prefix
 - Strict tag validation — reject all invalid bracket combinations
 - Prevent recursive triggering + reduce token consumption
@@ -19,6 +39,10 @@ All notable changes to this project will be documented in this file.
 
 - Add pipeline.py for file grouping, report merging, and issue counting
 - Use LLM Externalizer for code reviews instead of opus agents
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.51
 ## [2.0.50] - 2026-03-22
 
 ### Bug Fixes
