@@ -1,29 +1,45 @@
 #!/usr/bin/env bash
-# merge-rechecker-worktrees.sh — Merge all rechecker worktree branches into the current branch
+# merge-worktrees.sh — Merge all rechecker worktree branches and clean up
+#
+# Standalone script. Only requires: git, bash. No Claude Code dependency.
+# Run from any git repo where the rechecker plugin created worktrees.
 #
 # Usage:
-#   ./scripts/merge-rechecker-worktrees.sh [--dry-run] [--ours-on-conflict]
+#   bash merge-worktrees.sh [--dry-run] [--ours-on-conflict] [--no-cleanup]
 #
 # Options:
 #   --dry-run           Show what would be merged without doing it
 #   --ours-on-conflict  Auto-resolve conflicts by preferring current branch (ours)
-#
-# Prerequisites: clean working tree (no uncommitted changes)
+#   --no-cleanup        Skip worktree/branch/file cleanup after merging
 
 set -euo pipefail
 
 DRY_RUN=false
 OURS_ON_CONFLICT=false
+NO_CLEANUP=false
 
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=true ;;
     --ours-on-conflict) OURS_ON_CONFLICT=true ;;
+    --no-cleanup) NO_CLEANUP=true ;;
+    -h|--help)
+      sed -n '2,/^$/s/^# \?//p' "$0"
+      exit 0
+      ;;
     *) echo "Unknown option: $arg"; exit 1 ;;
   esac
 done
 
+# Must be in a git repo
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "ERROR: Not inside a git repository."
+  exit 1
+fi
+
+GIT_ROOT=$(git rev-parse --show-toplevel)
 CURRENT_BRANCH=$(git branch --show-current)
+echo "Git root: $GIT_ROOT"
 echo "Current branch: $CURRENT_BRANCH"
 
 # Check for uncommitted changes
@@ -33,16 +49,17 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
-# Find all rechecker worktree branches
-WORKTREE_BRANCHES=$(git branch --list 'worktree-rck-*' 'worktree-rechecker-*' | sed 's/^[* ]*//')
+# Find all rechecker worktree branches (both naming conventions)
+WORKTREE_BRANCHES=$(git branch --list 'worktree-rck-*' 'worktree-rechecker-*' | sed 's/^[* ]*//' || true)
 
 if [ -z "$WORKTREE_BRANCHES" ]; then
   echo "No rechecker worktree branches found. Nothing to merge."
   exit 0
 fi
 
+BRANCH_COUNT=$(echo "$WORKTREE_BRANCHES" | wc -l | tr -d ' ')
 echo ""
-echo "Found rechecker branches:"
+echo "Found $BRANCH_COUNT rechecker branch(es):"
 echo "$WORKTREE_BRANCHES" | while read -r branch; do
   commit=$(git log --oneline -1 "$branch" 2>/dev/null || echo "???")
   diff_stat=$(git diff --stat "$CURRENT_BRANCH...$branch" 2>/dev/null | tail -1)
@@ -89,7 +106,7 @@ for branch in $WORKTREE_BRANCHES; do
     MERGED=$((MERGED + 1))
   else
     # Check if there are conflicts
-    conflict_files=$(git diff --name-only --diff-filter=U 2>/dev/null)
+    conflict_files=$(git diff --name-only --diff-filter=U 2>/dev/null || true)
     if [ -n "$conflict_files" ]; then
       echo "  CONFLICT in:"
       echo "$conflict_files" | sed 's/^/    /'
@@ -101,7 +118,7 @@ for branch in $WORKTREE_BRANCHES; do
       FAILED=$((FAILED + 1))
       echo ""
       echo "=== STOPPED: resolve conflicts before continuing ==="
-      echo "Merged: $MERGED | Skipped: $SKIPPED | Failed: $FAILED | Remaining: $(echo "$WORKTREE_BRANCHES" | wc -l | tr -d ' ')"
+      echo "Merged: $MERGED | Skipped: $SKIPPED | Failed: $FAILED"
       exit 1
     else
       echo "  FAILED: $merge_output"
@@ -114,18 +131,44 @@ echo ""
 echo "=== MERGE COMPLETE ==="
 echo "Merged: $MERGED | Skipped: $SKIPPED | Failed: $FAILED"
 
-# Clean up worktrees and branches
+if $NO_CLEANUP; then
+  echo ""
+  echo "Cleanup skipped (--no-cleanup). To clean up manually:"
+  echo "  git worktree list  # find rechecker worktrees"
+  echo "  git branch -D $(echo $WORKTREE_BRANCHES | tr '\n' ' ')"
+  exit 0
+fi
+
+# Clean up worktrees
 echo ""
 echo "Cleaning up worktrees..."
-for branch in $WORKTREE_BRANCHES; do
-  # Remove worktree if exists
-  wt_name=$(echo "$branch" | sed 's/^worktree-//')
-  wt_path=".claude/worktrees/$wt_name"
-  if [ -d "$wt_path" ]; then
-    git worktree remove "$wt_path" --force 2>/dev/null && echo "  Removed worktree: $wt_path" || true
+# Use git worktree list to find all worktree paths for rechecker branches
+git worktree list --porcelain 2>/dev/null | while IFS= read -r line; do
+  if [[ "$line" == "worktree "* ]]; then
+    wt_path="${line#worktree }"
+  elif [[ "$line" == "branch refs/heads/worktree-rck-"* ]] || [[ "$line" == "branch refs/heads/worktree-rechecker-"* ]]; then
+    if [ -n "${wt_path:-}" ] && [ -d "$wt_path" ]; then
+      git worktree remove "$wt_path" --force 2>/dev/null && echo "  Removed worktree: $wt_path" || echo "  Failed to remove: $wt_path"
+    fi
   fi
 done
 
+# Delete merged branches
 echo ""
-echo "To delete the merged branches, run:"
-echo "  git branch -D $(echo $WORKTREE_BRANCHES | tr '\n' ' ')"
+echo "Deleting merged branches..."
+for branch in $WORKTREE_BRANCHES; do
+  git branch -D "$branch" 2>/dev/null && echo "  Deleted branch: $branch" || echo "  Failed to delete: $branch"
+done
+
+# Clean up merge-pending files
+PENDING_FILES=$(find "$GIT_ROOT" -maxdepth 1 -name 'rck-*-merge-pending.md' 2>/dev/null || true)
+if [ -n "$PENDING_FILES" ]; then
+  echo ""
+  echo "Removing merge-pending files..."
+  echo "$PENDING_FILES" | while read -r f; do
+    rm -f "$f" && echo "  Removed: $(basename "$f")"
+  done
+fi
+
+echo ""
+echo "Done."
