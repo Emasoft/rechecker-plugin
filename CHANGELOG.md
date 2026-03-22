@@ -9,6 +9,10 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 - Add mypy type checking to publish script lint stage
+
+### Miscellaneous Tasks
+
+- Bump version to 2.1.3
 ## [2.1.2] - 2026-03-22
 
 ### Bug Fixes
@@ -539,10 +543,6 @@ All notable changes to this project will be documented in this file.
 ### Miscellaneous Tasks
 
 - Configure marketplace notification for Emasoft/emasoft-plugins
-- Bump version to 2.0.1
-- Bump version to 2.0.2
-- Bump version to 2.0.3
-- Bump version to 2.0.4
 - Bump version to 2.0.5
 
 ### Refactor
