@@ -52,14 +52,7 @@ If `scripts/pipeline.py` is not found, look for it at `${CLAUDE_PLUGIN_ROOT}/scr
 
 ## Setup (once, before the loops — skip if resuming)
 
-1. Ensure TLDR artifacts are gitignored (prevents interference with worktree commits):
-```bash
-for pattern in ".tldr/" ".tldrignore" ".tldr_session_*"; do
-  grep -qxF "$pattern" .gitignore 2>/dev/null || echo "$pattern" >> .gitignore
-done
-```
-
-2. Extract UID and initialize:
+1. Extract UID and initialize:
 ```bash
 UID=$(git branch --show-current | sed 's/^worktree-rck-//')
 echo "UID=$UID"
@@ -68,23 +61,23 @@ git log -1 --format=%s HEAD > .rechecker/commit-message.txt
 mkdir -p .rechecker/reports
 ```
 
-3. Initialize the pipeline index (assigns FIDs, creates groups):
+2. Initialize the pipeline index (assigns FIDs, creates groups):
 ```bash
 python3 scripts/pipeline.py init --uid "$UID"
 ```
 If `scripts/pipeline.py` is not found, look for it at `${CLAUDE_PLUGIN_ROOT}/scripts/pipeline.py`.
 
-4. Initialize progress tracking:
+3. Initialize progress tracking:
 ```bash
 python3 scripts/pipeline.py progress-init
 ```
 
-5. Read the groups output to know what files to process:
+4. Read the groups output to know what files to process:
 ```bash
 python3 scripts/pipeline.py groups
 ```
 
-6. Check linter availability: `ruff`, `mypy`, `shellcheck`, `npx eslint`, `go vet`.
+5. Check linter availability: `ruff`, `mypy`, `shellcheck`, `npx eslint`, `go vet`.
 
 ## Step 1 — [LOOP 1] Initial Linting (LP00001)
 

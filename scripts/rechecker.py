@@ -107,6 +107,30 @@ def _is_rechecker_worktree(cwd: str) -> bool:
         return False
 
 
+# Patterns that TLDR creates inside worktrees — must be gitignored to prevent
+# them from being committed by the rechecker's final `git add -A && git commit`.
+_TLDR_GITIGNORE_PATTERNS = [".tldr/", ".tldrignore", ".tldr_session_*"]
+
+
+def _ensure_tldr_gitignored(git_root: str) -> None:
+    """Append TLDR patterns to .gitignore if not already present."""
+    gitignore = Path(git_root) / ".gitignore"
+    try:
+        existing = gitignore.read_text() if gitignore.exists() else ""
+    except OSError:
+        existing = ""
+    existing_lines = set(existing.splitlines())
+    missing = [p for p in _TLDR_GITIGNORE_PATTERNS if p not in existing_lines]
+    if not missing:
+        return
+    with open(gitignore, "a") as f:
+        if existing and not existing.endswith("\n"):
+            f.write("\n")
+        f.write("# TLDR artifacts (added by rechecker)\n")
+        for pattern in missing:
+            f.write(pattern + "\n")
+
+
 def main() -> None:
     raw = sys.stdin.read()
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
@@ -177,6 +201,9 @@ def main() -> None:
     results: list[dict[str, str]] = []
 
     for root in git_roots:
+        # Ensure TLDR artifacts won't pollute worktree commits
+        _ensure_tldr_gitignored(root)
+
         # 6-char uuid ties all files from this run together
         uid = uuid.uuid4().hex[:6]
         # Worktree name uses uuid only (stays fixed for the run's lifetime)
