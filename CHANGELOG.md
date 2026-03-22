@@ -6,7 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Add mypy type checking to publish script lint stage
+## [2.1.2] - 2026-03-22
+
+### Bug Fixes
+
 - Resolve mypy type errors in pipeline.py and resume-check.py
+
+### Miscellaneous Tasks
+
+- Bump version to 2.1.2
 ## [2.1.1] - 2026-03-22
 
 ### Bug Fixes
