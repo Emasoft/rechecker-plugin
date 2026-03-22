@@ -6,7 +6,17 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Don't auto-merge worktree — let main Claude merge when ready
+- Remove f-prefix from string without placeholders (ruff F541)
+## [2.0.46] - 2026-03-22
+
+### Bug Fixes
+
 - Collect report from worktree dir after headless orchestrator exit
+
+### Miscellaneous Tasks
+
+- Bump version to 2.0.46
 ## [2.0.45] - 2026-03-21
 
 ### Miscellaneous Tasks
