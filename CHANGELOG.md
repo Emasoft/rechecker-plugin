@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Add no-delete rules to ALL review prompts and agents
+## [2.2.3] - 2026-03-23
+
 ### Features
 
 - Add adversarial audit loop (LP00035) between functionality and final lint
+
+### Miscellaneous Tasks
+
+- Bump version to 2.2.3
 ## [2.2.2] - 2026-03-23
 
 ### Bug Fixes
