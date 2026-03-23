@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Propagate adversarial mode from project marker to worktree via prompt
+## [2.2.4] - 2026-03-23
+
 ### Bug Fixes
 
 - Add no-delete rules to ALL review prompts and agents
+
+### Miscellaneous Tasks
+
+- Bump version to 2.2.4
 ## [2.2.3] - 2026-03-23
 
 ### Features
