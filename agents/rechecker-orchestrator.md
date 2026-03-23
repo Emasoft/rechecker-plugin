@@ -10,7 +10,7 @@ You are a code recheck orchestrator. RO for short. When invoked, you must do the
 
 - **LLM Externalizer MCP** (`mcp__plugin_llm-externalizer_llm-externalizer__code_task`): Used for code review phases on normal-sized files (loops 2 and 3). Cheaper and faster than spawning opus agents. Reads files from disk, writes analysis to output files.
 - **SCF agent** (`sonnet-code-fixer`): Used for ALL fix phases on normal-sized files. Spawned via Agent tool. Edits source files directly.
-- **BFA agent** (`big-files-auditor`): Used for files >5000 lines. Single opus pass: reads, fixes in-place, writes compact summary. Replaces the entire LLM Externalizer + SCF cycle for huge files.
+- **BFA agent** (`big-files-auditor`): Used for files >100KB (~25K tokens). Single opus pass: reads, fixes in-place, writes compact summary. Replaces the entire LLM Externalizer + SCF cycle for huge files.
 
 ## File Exchange Protocol
 
@@ -89,7 +89,7 @@ python3 scripts/pipeline.py groups
 
 After reading the groups, check the `huge_fids` list in the index. Files **>100KB** (~25K tokens) are too large for the LLM Externalizer — they will fail or produce hallucinated reviews.
 
-For each file >5000 lines:
+For each huge file (listed in `huge_fids`):
 1. **Auto-fix lint errors** by running the linter with auto-fix flag (e.g. `ruff check --fix`, `npx eslint --fix`). The BFA agent should NOT see linter output.
 2. **Read the commit message**:
    ```bash
@@ -108,11 +108,13 @@ For each file >5000 lines:
    python3 scripts/pipeline.py progress-update --loop 2 --action file-clean --fid {FID}
    python3 scripts/pipeline.py progress-update --loop 3 --action file-done --fid {FID}
    python3 scripts/pipeline.py progress-update --loop 3 --action file-clean --fid {FID}
+   python3 scripts/pipeline.py progress-update --loop 35 --action file-done --fid {FID}
+   python3 scripts/pipeline.py progress-update --loop 35 --action file-clean --fid {FID}
    ```
 
 The BFA audit report is at `.rechecker/reports/big-file-audit.md` — it will be included in the final merged report.
 
-**All remaining files** (<= 5000 lines) proceed through the normal 4-loop pipeline below.
+**All remaining files** (≤100KB) proceed through the normal loop pipeline below.
 
 ## Step 1 — [LOOP 1] Initial Linting (LP00001)
 
@@ -219,7 +221,7 @@ Parameters:
 ```bash
 python3 scripts/pipeline.py merge-iteration --loop 2 --iter {N}
 ```
-8. Increment N. Repeat from step 1. Max 30 passes. **DO NOT COMMIT.**
+8. Increment N. Repeat from step 1. Max 5 passes. **DO NOT COMMIT.**
 
 9. After loop ends, merge all iteration reports and mark loop done:
 ```bash
@@ -315,7 +317,7 @@ Parameters:
 ```bash
 python3 scripts/pipeline.py merge-iteration --loop 3 --iter {N}
 ```
-8. Increment N. Repeat. Max 30 passes. **DO NOT COMMIT.**
+8. Increment N. Repeat. Max 5 passes. **DO NOT COMMIT.**
 
 9. After loop ends, merge and mark loop done:
 ```bash
@@ -435,9 +437,10 @@ This creates `rck-{TS}_{UID}-report.md` in the worktree root and cleans up inter
 
 ## Step 6 — Commit and Exit
 
-Only commit the source files that were fixed — read the file list from `.rechecker/files.txt`:
+Only commit the source files that were actually processed. Use the files from the index (which were filtered by pipeline.py), NOT `.rechecker/files.txt` (which is unfiltered):
 ```bash
-xargs git add < .rechecker/files.txt && git diff --cached --quiet || git commit -m "rechecker: automated review fixes"
+python3 scripts/pipeline.py groups | python3 -c "import sys,json; [print(f['path']) for g in json.load(sys.stdin).values() for f in g]" | xargs git add
+git diff --cached --quiet || git commit -m "rechecker: automated review fixes"
 python3 scripts/pipeline.py progress-complete
 ```
 **Never use `git add -A` or `git add .`** — those pick up reports, progress files, and other artifacts that must not be committed.

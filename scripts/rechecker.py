@@ -273,12 +273,13 @@ def main() -> None:
                     break
                 if not search_dir.is_dir():
                     continue
-                for report in sorted(search_dir.glob("rck-*-report.md")):
+                # Sort reverse so most recent timestamp comes first
+                for report in sorted(search_dir.glob("rck-*-report.md"), reverse=True):
                     dest = reports_dev / _rck_name("report", "md")
                     shutil.copy2(str(report), str(dest))
                     report_path = str(dest)
                     _log(f"  copied report -> {dest.name}")
-                    break  # take only the first (most recent) report
+                    break  # take only the most recent report
 
         results.append({
             "root": root,
@@ -326,18 +327,8 @@ def main() -> None:
             f'cd "{r["root"]}" && bash .rechecker/merge-worktrees.sh',
             "```",
             "",
-            "Or merge this branch individually:",
-            "",
-            "```bash",
-            f'cd "{r["root"]}" && git merge {r["branch"]} --no-edit',
-            "```",
-            "",
-            "If there are merge conflicts, resolve them yourself and commit.",
-            "After merging, delete this file and the worktree branch:",
-            "",
-            "```bash",
-            f"rm {merge_file} && git branch -d {r['branch']}",
-            "```",
+            "The merge script handles ancestry checks, conflict resolution, worktree cleanup,",
+            "branch deletion, and report archival. Do NOT merge manually with `git merge`.",
         ])
         notice_path = Path(r["root"]) / merge_file
         notice_path.write_text("\n".join(merge_lines) + "\n")
@@ -359,7 +350,9 @@ def main() -> None:
     ]
 
     for r in results:
-        if r["report"]:
+        if r["exit_code"] != "0" and not r["report"]:
+            context_lines.append(f"  - Branch `{r['branch']}`: FAILED (exit code {r['exit_code']}, no report)")
+        elif r["report"]:
             context_lines.append(f"  - Branch `{r['branch']}` has fixes. Report: `{r['report']}`")
         else:
             context_lines.append(f"  - Branch `{r['branch']}`: code was clean, no fixes needed.")
