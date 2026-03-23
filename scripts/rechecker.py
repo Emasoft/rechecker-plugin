@@ -385,11 +385,11 @@ def main() -> None:
 
     context_msg = "\n".join(context_lines)
 
-    # Output both additionalContext (for Claude) and systemMessage (for user terminal)
+    # For async hooks, additionalContext and systemMessage must be TOP-LEVEL fields.
+    # (hookSpecificOutput is for synchronous hooks only.)
+    # The output is delivered to Claude on the next conversation turn.
     output = {
-        "hookSpecificOutput": {
-            "additionalContext": context_msg,
-        },
+        "additionalContext": context_msg,
         "systemMessage": "RECHECKER: Review done. Run: bash .rechecker/merge-worktrees.sh",
     }
     print(json.dumps(output))
