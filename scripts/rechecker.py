@@ -102,7 +102,8 @@ def _is_rechecker_worktree(cwd: str) -> bool:
             cwd=cwd, capture_output=True, text=True, timeout=5,
         )
         branch = result.stdout.strip()
-        return branch.startswith("worktree-rck-")
+        # Check both current (rck-) and legacy (rechecker-) naming conventions
+        return branch.startswith("worktree-rck-") or branch.startswith("worktree-rechecker-")
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return False
 
