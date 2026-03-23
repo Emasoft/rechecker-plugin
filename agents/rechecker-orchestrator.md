@@ -122,6 +122,9 @@ python3 scripts/pipeline.py progress-update --loop 1 --action start-loop
 ```
 
 Lint the changed files directly. Save output to `.rechecker/reports/lint-pass{N}.txt`.
+
+For TypeScript/JavaScript projects, also run `npx tsc --noEmit 2>&1` and append the output to the lint file. This catches type errors that ESLint misses and that the fixer might introduce.
+
 If lint errors found:
 - Launch SCF swarm (one per file with errors, parallel). Each SCF prompt:
   `"Fix lint errors in: {file} — Read lint output from: .rechecker/reports/lint-pass{N}.txt"`
@@ -160,9 +163,12 @@ Parameters:
     Analyze the source code below for correctness bugs. Check for logic errors,
     null/undefined handling, type mismatches, edge cases, race conditions,
     resource leaks, security issues, error handling, API contract violations,
-    dead code, copy-paste errors, import errors, and scoping issues.
+    copy-paste errors, import errors, and scoping issues.
 
-    Do NOT report style issues or performance suggestions.
+    Do NOT report: style issues, performance suggestions, unused variables,
+    unused imports, dead code, or missing type annotations. The linter
+    handles those — reporting them here causes the fixer to delete code
+    that is actually used, breaking the build.
 
     For each bug found, identify its location by quoting the relevant code
     and naming the enclosing scope (function, class, module-level, etc.).

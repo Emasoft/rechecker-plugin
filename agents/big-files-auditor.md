@@ -33,9 +33,12 @@ Lint errors have already been auto-fixed by script before you were launched. Do 
    - Security: injection, path traversal, hardcoded secrets
    - Error handling: swallowed exceptions, empty catch blocks, missing propagation
    - API contract violations: wrong return types, missing parameters, stale usage
-   - Dead code, broken references, stale imports
    - Intent mismatches: function name says X but code does Y
    - Incomplete implementations: TODO, FIXME, stubs, placeholder values
+
+   Do NOT look for: unused variables, unused imports, dead code, missing
+   type annotations, style issues. The linter handles those. Reporting them
+   causes you to delete code that is actually used elsewhere.
 
 3. **Fix each bug immediately as you find it.** Use the Edit tool. Do NOT write a review first. Do NOT create a findings file. Fix it in-place, right now.
 
