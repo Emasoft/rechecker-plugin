@@ -45,6 +45,10 @@ BIG_FILE_BYTES = 10_000
 # 100KB ≈ 25K tokens — conservative limit for externalizer reliability.
 HUGE_FILE_BYTES = 100_000
 
+# Files above this limit are skipped entirely — too large even for opus[1m].
+# 500KB ≈ 125K tokens. Leaves room for system prompt + output in 1M context.
+MAX_FILE_BYTES = 500_000
+
 # Group size limits
 MAX_BIG_PER_GROUP = 3
 PREFER_BIG_PER_GROUP = 1
@@ -438,11 +442,16 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     # Assign FIDs and measure sizes
     files: dict[str, dict] = {}
+    skipped_too_large: list[str] = []
     for i, path_str in enumerate(file_paths, 1):
         fid = f"FID{i:05d}"
         p = Path(path_str)
         lines = _count_lines(p)
         size = _file_size(p)
+        # Files above MAX_FILE_BYTES are skipped entirely — too large even for opus[1m]
+        if size > MAX_FILE_BYTES:
+            skipped_too_large.append(f"{path_str} ({size // 1024}KB)")
+            continue
         huge = size > HUGE_FILE_BYTES
         category = "huge" if huge else ("big" if lines > BIG_FILE_LINES or size > BIG_FILE_BYTES else "small")
         files[fid] = {
@@ -451,6 +460,10 @@ def cmd_init(args: argparse.Namespace) -> None:
             "bytes": size,
             "category": category,
         }
+    if skipped_too_large:
+        print(f"Skipped {len(skipped_too_large)} file(s) exceeding {MAX_FILE_BYTES // 1024}KB limit:")
+        for s in skipped_too_large:
+            print(f"  {s}")
 
     # Huge files go to big-files-auditor, not through the normal pipeline groups
     huge_fids = [fid for fid, info in files.items() if info["category"] == "huge"]
