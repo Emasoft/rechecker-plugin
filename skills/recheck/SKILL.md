@@ -13,13 +13,6 @@ The pipeline uses a sonnet orchestrator in a named worktree:
 
 **This skill runs synchronously.** You are responsible for merging the worktree branch after completion.
 
-## Adversarial Mode
-
-To enable the adversarial audit loop (finds exploitable vulnerabilities), create the marker file before running:
-```bash
-cd "$(git rev-parse --show-toplevel)" && mkdir -p .rechecker && touch .rechecker/adversarial
-```
-
 ## Checklist
 
 Copy and use this checklist to track progress:
@@ -42,10 +35,6 @@ Copy and use this checklist to track progress:
 - [ ] **Ensure TLDR artifacts are gitignored**:
   ```bash
   cd "$(git rev-parse --show-toplevel)" && for p in ".tldr/" ".tldrignore" ".tldr_session_*"; do grep -qxF "$p" .gitignore 2>/dev/null || echo "$p" >> .gitignore; done
-  ```
-- [ ] **(Optional) Enable adversarial audit** — ask the user if they want it:
-  ```bash
-  cd "$(git rev-parse --show-toplevel)" && mkdir -p .rechecker && touch .rechecker/adversarial
   ```
 - [ ] Identify the latest commit SHA and changed files:
   ```bash

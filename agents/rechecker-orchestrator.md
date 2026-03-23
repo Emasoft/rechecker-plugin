@@ -325,32 +325,100 @@ python3 scripts/pipeline.py merge-loop --loop 3
 python3 scripts/pipeline.py progress-update --loop 3 --action end-loop
 ```
 
-## Step 3.5 — [LOOP 3.5] Adversarial Audit (LP00035) — OPTIONAL
+## Step 3.5 — [LOOP 3.5] Adversarial Audit (LP00035)
 
-This loop is **optional**. Run it if ANY of these are true:
-1. Your launch prompt contains "ADVERSARIAL MODE ENABLED"
-2. The file `.rechecker/adversarial` exists in the worktree
-3. The commit touches security-sensitive code (auth, crypto, networking, file I/O, user input, permissions, database queries)
-
-To check: `[[ -f .rechecker/adversarial ]] && echo "RUN" || echo "SKIP"`
-
-If none of the above apply, skip to Step 4.
+**Always runs.** Two phases: LLM Externalizer iterates until clean, then one adversarial pass.
 
 Mark loop start:
 ```bash
 python3 scripts/pipeline.py progress-update --loop 35 --action start-loop
 ```
 
-**Use the LLM Externalizer MCP for adversarial reviews.**
+### Phase A — LLM Externalizer security review (iterative)
 
-**Single pass (no iteration — adversarial audit runs once):**
+Same structure as Loop 2, but with a security-focused prompt. Iterates until 0 issues or max 5 passes.
+
+**Pass N (iteration IT{N}):**
 
 Mark iteration start:
 ```bash
-python3 scripts/pipeline.py progress-update --loop 35 --action start-iter --iter 1
+python3 scripts/pipeline.py progress-update --loop 35 --action start-iter --iter {N}
 ```
 
-1. For each file, call the LLM Externalizer to audit it adversarially.
+1. For each file, call the LLM Externalizer:
+```
+Tool: mcp__plugin_llm-externalizer_llm-externalizer__code_task
+Parameters:
+  instructions: |
+    Analyze the source code below for security vulnerabilities and robustness
+    issues. Check for: injection (SQL, shell, HTML, path traversal), input
+    validation gaps, TOCTOU races, resource leaks, unchecked error returns,
+    unsafe type coercion, unvalidated external data, information leaks in
+    error messages, missing authentication/authorization checks, hardcoded
+    secrets, and unsafe deserialization.
+
+    CRITICAL RULES — violations break the build:
+    - Do NOT report unused variables, unused imports, unreferenced functions,
+      or "dead code". You only see ONE file. Other files import and call these
+      symbols. Reporting them causes the fixer to DELETE code referenced elsewhere.
+    - Do NOT suggest removing or deleting any code. Only report vulnerabilities
+      that need FIXING, not code that needs REMOVING.
+    - Do NOT report: style, performance, missing docs.
+
+    For each vulnerability found, identify its location by quoting the relevant
+    code and naming the enclosing scope. Do NOT use line numbers.
+
+    Report each vulnerability with its severity and how to fix it.
+    The fix must NEVER be "remove this code" — describe how to CORRECT it.
+
+    Respond in markdown. For each vulnerability use this format:
+
+    ### VULN: <short title>
+    **Severity**: critical|high|medium|low
+    **Location**: <scope/symbol/code quote that identifies where>
+    **Problem**: <what is vulnerable>
+    **Fix**: <how to fix it>
+
+    If no vulnerabilities found, respond with exactly: NO ISSUES FOUND
+  input_files_paths: "<source file path>"
+  ensemble: false
+  max_tokens: 4000
+```
+
+2. The tool returns a file path to the output .md file. Read it.
+3. Copy the output file to:
+   `.rechecker/reports/rck-{TS}_{UID}-[LP00035-IT{N:05d}-FID{ID:05d}]-review.md`
+4. Check the content: if "NO ISSUES FOUND", mark clean:
+   ```bash
+   python3 scripts/pipeline.py progress-update --loop 35 --action file-clean --fid {FID}
+   ```
+   Otherwise, count `### VULN:` headers.
+5. If ALL reviews say "NO ISSUES FOUND" → Phase A is done. Go to Phase B.
+6. Launch SCF swarm for files with vulnerabilities. Each SCF prompt:
+   `"Fix vulnerabilities in: {file} — Read findings from: .rechecker/reports/rck-...-review.md"`
+   `subagent_type: "sonnet-code-fixer"`, `model: "sonnet"`
+   After each file is fixed, mark it:
+   ```bash
+   python3 scripts/pipeline.py progress-update --loop 35 --action file-done --fid {FID}
+   ```
+7. Merge fix reports:
+```bash
+python3 scripts/pipeline.py merge-iteration --loop 35 --iter {N}
+```
+8. Increment N. Repeat from step 1. Max 5 passes. **DO NOT COMMIT.**
+
+### Phase B — Adversarial audit (single final pass)
+
+After Phase A produces 0 issues, run ONE adversarial pass. This catches what the standard security review missed.
+
+Increment iteration number (N = last Phase A iteration + 1).
+
+Mark iteration start:
+```bash
+python3 scripts/pipeline.py progress-update --loop 35 --action start-iter --iter {N}
+```
+
+1. For each file, call the LLM Externalizer with the adversarial prompt:
 ```
 Tool: mcp__plugin_llm-externalizer_llm-externalizer__code_task
 Parameters:
@@ -384,30 +452,18 @@ Parameters:
   max_tokens: 4000
 ```
 
-2. The tool returns a file path to the output .md file. Read it.
-3. Copy the output file to:
-   `.rechecker/reports/rck-{TS}_{UID}-[LP00035-IT00001-FID{ID:05d}]-review.md`
-4. Check the content: if it contains "NO ISSUES FOUND", this file is clean — mark it:
-   ```bash
-   python3 scripts/pipeline.py progress-update --loop 35 --action file-clean --fid {FID}
-   ```
-   Otherwise, count the `### VULN:` headers to know how many vulnerabilities were found.
-5. If ALL reviews say "NO ISSUES FOUND" → exit loop, go to Step 4.
-6. Launch SCF swarm for files with vulnerabilities. Each SCF prompt:
-   `"Fix vulnerabilities in: {file} — Read findings from: .rechecker/reports/rck-...-review.md"`
-   `subagent_type: "sonnet-code-fixer"`, `model: "sonnet"`
-   After each file is fixed, mark it:
-   ```bash
-   python3 scripts/pipeline.py progress-update --loop 35 --action file-done --fid {FID}
-   ```
-7. Merge fix reports:
+2. Read the output, copy to `.rechecker/reports/rck-{TS}_{UID}-[LP00035-IT{N:05d}-FID{ID:05d}]-review.md`
+3. If issues found, launch SCF swarm to fix them (same as Phase A step 6).
+4. Merge fix reports:
 ```bash
-python3 scripts/pipeline.py merge-iteration --loop 35 --iter 1
+python3 scripts/pipeline.py merge-iteration --loop 35 --iter {N}
 ```
 
-**No iteration. One pass only.** The adversarial audit is expensive and diminishing returns are steep.
+**No further iteration after Phase B.** One adversarial pass is enough.
 
-8. After loop ends, merge and mark loop done:
+### End of Loop 3.5
+
+Merge all iteration reports and mark loop done:
 ```bash
 python3 scripts/pipeline.py merge-loop --loop 35
 python3 scripts/pipeline.py progress-update --loop 35 --action end-loop

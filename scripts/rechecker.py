@@ -227,19 +227,11 @@ def main() -> None:
             now = datetime.now().strftime("%Y%m%d_%H%M%S")
             return f"rck-{now}_{uid}-{purpose}.{ext}"
 
-        # Check if adversarial audit is enabled for this project
-        adversarial_marker = rechecker_dir / "adversarial"
-        adversarial_enabled = adversarial_marker.is_file()
-
-        prompt = "Run the full recheck pipeline on the latest commit."
-        if adversarial_enabled:
-            prompt += " ADVERSARIAL MODE ENABLED: run the adversarial audit loop (Step 3.5)."
-
         cmd = [
             "claude", "--worktree", wt_name,
             "--agent", orchestrator,
             "--dangerously-skip-permissions",
-            "-p", prompt,
+            "-p", "Run the full recheck pipeline on the latest commit.",
         ]
         _log(f"  worktree: {wt_name} (uid={uid})")
         _log(f"  cmd: {' '.join(cmd)}")
