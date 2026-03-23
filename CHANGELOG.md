@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Make adversarial audit permanent with two-phase design
+## [2.2.6] - 2026-03-23
+
 ### Bug Fixes
 
 - Protocol audit — 12 issues found and fixed
+
+### Miscellaneous Tasks
+
+- Bump version to 2.2.6
 ## [2.2.5] - 2026-03-23
 
 ### Features
