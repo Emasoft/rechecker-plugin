@@ -1,6 +1,6 @@
 ---
 name: big-files-auditor
-description: single-pass review and fix for large files (>100KB)
+description: single-pass review and fix for large files (>80KB)
 model: opus
 background: true
 ---

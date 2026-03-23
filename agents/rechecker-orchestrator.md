@@ -87,7 +87,7 @@ python3 scripts/pipeline.py groups
 
 ## Big File Routing (before the loops)
 
-After reading the groups, check the `huge_fids` list in the index. Files **>100KB** (~25K tokens) are too large for the LLM Externalizer — they will fail or produce hallucinated reviews.
+After reading the groups, check the `huge_fids` list in the index. Files **>80KB** (~20K tokens) are too large for the LLM Externalizer — they will fail or produce hallucinated reviews.
 
 For each file >5000 lines:
 1. **Auto-fix lint errors** by running the linter with auto-fix flag (e.g. `ruff check --fix`, `npx eslint --fix`). The BFA agent should NOT see linter output.
