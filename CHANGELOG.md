@@ -2,21 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- Merge-worktrees.sh fully automated with auto-stash and -X ours
+
+### Rechecker
+
+- Automated review fixes
 ## [2.1.4] - 2026-03-22
 
 ### Bug Fixes
 
 - Ignore submodule dirtiness in merge-worktrees.sh clean check
 
-### Rechecker
-
-- Automated review fixes
-- Automated review fixes
-
 ### Miscellaneous Tasks
 
 - Bump version to 2.1.4
 
+### Rechecker
+
+- Automated review fixes
+- Automated review fixes
 ## [2.1.3] - 2026-03-22
 
 ### Bug Fixes
