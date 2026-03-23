@@ -36,9 +36,13 @@ Lint errors have already been auto-fixed by script before you were launched. Do 
    - Intent mismatches: function name says X but code does Y
    - Incomplete implementations: TODO, FIXME, stubs, placeholder values
 
-   Do NOT look for: unused variables, unused imports, dead code, missing
-   type annotations, style issues. The linter handles those. Reporting them
-   causes you to delete code that is actually used elsewhere.
+   CRITICAL RULES — violations break the build:
+   - Do NOT look for unused variables, unused imports, unreferenced functions,
+     or "dead code". You only see ONE file. Other files import and call these
+     symbols. Deleting them breaks the entire project.
+   - NEVER delete, remove, or clean up any code. Only FIX bugs by correcting
+     the broken logic. If you're unsure whether something is used, SKIP it.
+   - Do NOT fix style issues or missing type annotations. The linter handles those.
 
 3. **Fix each bug immediately as you find it.** Use the Edit tool. Do NOT write a review first. Do NOT create a findings file. Fix it in-place, right now.
 

@@ -74,4 +74,8 @@ Report each finding as:
 
 If no vulnerabilities found, respond with: `NO ISSUES FOUND`
 
-**Do NOT report:** style issues, performance suggestions, missing docs, unused variables. Only report things that can be **exploited or triggered** to cause incorrect behavior.
+**CRITICAL RULES — violations break the build:**
+- Do NOT report unused variables, unused imports, unreferenced functions, or "dead code". You only see ONE file. Other files import and call these symbols. Reporting them causes the fixer to DELETE code that is referenced elsewhere, breaking the entire project.
+- Do NOT suggest removing, deleting, or cleaning up any code. Only report vulnerabilities that need FIXING, not code that needs REMOVING.
+- Do NOT report style issues, performance suggestions, or missing docs.
+- Only report things that can be **exploited or triggered** to cause incorrect behavior.

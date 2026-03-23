@@ -165,10 +165,15 @@ Parameters:
     resource leaks, security issues, error handling, API contract violations,
     copy-paste errors, import errors, and scoping issues.
 
-    Do NOT report: style issues, performance suggestions, unused variables,
-    unused imports, dead code, or missing type annotations. The linter
-    handles those — reporting them here causes the fixer to delete code
-    that is actually used, breaking the build.
+    CRITICAL RULES — violations break the build:
+    - Do NOT report unused variables, unused imports, unreferenced functions,
+      or "dead code". You only see ONE file. Other files import and call these
+      symbols. Reporting them as unused causes the fixer to DELETE code that
+      is referenced elsewhere, breaking the entire project.
+    - Do NOT suggest removing, deleting, or cleaning up any code. Only report
+      bugs that need FIXING, not code that needs REMOVING.
+    - Do NOT report style issues, performance suggestions, or missing type
+      annotations. The linter handles those.
 
     For each bug found, identify its location by quoting the relevant code
     and naming the enclosing scope (function, class, module-level, etc.).
@@ -177,7 +182,8 @@ Parameters:
     code quotes, surrounding context — whatever makes the location unambiguous.
 
     Report each bug with its severity (critical/high/medium/low), a description
-    of what is wrong, and how to fix it.
+    of what is wrong, and how to fix it. The fix must NEVER be "remove this
+    code" — always describe how to CORRECT the code.
 
     Respond in markdown. For each bug use this format:
 
@@ -259,7 +265,13 @@ Parameters:
     wrong behavior, missing cases, broken contracts, silent failures,
     undocumented side effects, stale API usage, and wrong assumptions.
 
-    Do NOT check syntax, types, or style.
+    CRITICAL RULES — violations break the build:
+    - Do NOT report unused variables, unused imports, unreferenced functions,
+      or "dead code". You only see ONE file. Other files import and call these
+      symbols. Reporting them causes the fixer to DELETE code referenced elsewhere.
+    - Do NOT suggest removing or deleting any code. Only report issues that
+      need CORRECTING, not code that needs REMOVING.
+    - Do NOT check syntax, types, or style.
 
     For each issue found, identify its location by quoting the relevant code
     and naming the enclosing scope. Do NOT use line numbers — use symbol names,
@@ -267,6 +279,7 @@ Parameters:
 
     Report each issue with its severity (critical/high/medium/low), what the
     code is supposed to do (intent), and what it actually does (reality).
+    The fix must NEVER be "remove this code" — describe how to CORRECT it.
 
     Respond in markdown. For each issue use this format:
 
@@ -340,7 +353,13 @@ Parameters:
     Audit the source code below, with an adversarial stance, finding issues
     and shortcomings as an external adversary would do.
 
-    Do NOT report: style, performance, unused variables, missing docs.
+    CRITICAL RULES — violations break the build:
+    - Do NOT report unused variables, unused imports, unreferenced functions,
+      or "dead code". You only see ONE file. Other files import and call these
+      symbols. Reporting them causes the fixer to DELETE code referenced elsewhere.
+    - Do NOT suggest removing or deleting any code. Only report vulnerabilities
+      that need FIXING, not code that needs REMOVING.
+    - Do NOT report: style, performance, missing docs.
     Only report things that can be EXPLOITED or TRIGGERED to cause incorrect behavior.
 
     For each finding, identify its location by quoting the relevant code

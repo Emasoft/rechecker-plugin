@@ -7,11 +7,18 @@ model: sonnet
 Use this skill to trigger a full automated code review of the latest committed changes.
 
 The pipeline uses a sonnet orchestrator in a named worktree:
-- **RO** (rechecker-orchestrator): Sonnet orchestrator — runs all 4 loops, makes 1 commit
-- **LLM Externalizer**: External LLM (grok/gemini via OpenRouter) — reviews code for bugs and intent mismatches
+- **RO** (rechecker-orchestrator): Sonnet orchestrator — runs all loops, makes 1 commit
+- **LLM Externalizer**: External LLM (grok/gemini via OpenRouter) — reviews code for bugs, intent, and vulnerabilities
 - **SCF** (sonnet-code-fixer): Sonnet swarm worker — applies fixes
 
 **This skill runs synchronously.** You are responsible for merging the worktree branch after completion.
+
+## Adversarial Mode
+
+To enable the adversarial audit loop (finds exploitable vulnerabilities), create the marker file before running:
+```bash
+cd "$(git rev-parse --show-toplevel)" && mkdir -p .rechecker && touch .rechecker/adversarial
+```
 
 ## Checklist
 
@@ -28,13 +35,17 @@ Copy and use this checklist to track progress:
   RCK_WT="rck-${RCK_UID}"
   echo "$RCK_WT"
   ```
-- [ ] **Deploy the merge script** to `.rechecker/` (rechecker.py does this in auto mode, but the skill must do it manually):
+- [ ] **Deploy the merge script** to `.rechecker/`:
   ```bash
   cd "$(git rev-parse --show-toplevel)" && mkdir -p .rechecker && cp "${CLAUDE_PLUGIN_ROOT}/scripts/merge-worktrees.sh" .rechecker/merge-worktrees.sh && chmod +x .rechecker/merge-worktrees.sh
   ```
 - [ ] **Ensure TLDR artifacts are gitignored**:
   ```bash
   cd "$(git rev-parse --show-toplevel)" && for p in ".tldr/" ".tldrignore" ".tldr_session_*"; do grep -qxF "$p" .gitignore 2>/dev/null || echo "$p" >> .gitignore; done
+  ```
+- [ ] **(Optional) Enable adversarial audit** — ask the user if they want it:
+  ```bash
+  cd "$(git rev-parse --show-toplevel)" && mkdir -p .rechecker && touch .rechecker/adversarial
   ```
 - [ ] Identify the latest commit SHA and changed files:
   ```bash
@@ -58,7 +69,7 @@ Copy and use this checklist to track progress:
   ```bash
   cd "$(git rev-parse --show-toplevel)" && bash .rechecker/merge-worktrees.sh
   ```
-  The script handles: merge with `-X ours`, move reports to `docs_dev/`, delete branches, clean up.
+  The script handles: ancestry check, merge with `-X theirs`, move reports to `docs_dev/`, delete branches, clean up.
 - [ ] **Read the report** and tell the user what was found and fixed:
   ```bash
   ls -t reports_dev/rck-*-report.md | head -1
