@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Explicitly state adversarial agent is review-only, only SCF fixes
+## [2.2.7] - 2026-03-23
+
 ### Features
 
 - Make adversarial audit permanent with two-phase design
+
+### Miscellaneous Tasks
+
+- Bump version to 2.2.7
 ## [2.2.6] - 2026-03-23
 
 ### Bug Fixes
