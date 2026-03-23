@@ -328,10 +328,12 @@ This creates `rck-{TS}_{UID}-report.md` in the worktree root and cleans up inter
 
 ## Step 6 — Commit and Exit
 
+Only commit the source files that were fixed — read the file list from `.rechecker/files.txt`:
 ```bash
-git add -A -- ':!.tldr' ':!.tldrignore' ':!.tldr_session_*' ':!rck-*-report.md' ':!.rechecker/' && git commit -m "rechecker: automated review fixes"
+xargs git add < .rechecker/files.txt && git diff --cached --quiet || git commit -m "rechecker: automated review fixes"
 python3 scripts/pipeline.py progress-complete
 ```
+**Never use `git add -A` or `git add .`** — those pick up reports, progress files, and other artifacts that must not be committed.
 If no changes to commit (code was already clean), skip the commit but still run `progress-complete`. Exit.
 
 ---
