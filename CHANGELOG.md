@@ -6,8 +6,17 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Exclude report files and .rechecker/ from worktree commits
+## [2.1.16] - 2026-03-23
+
+### Bug Fixes
+
 - Use top-level additionalContext for async hook output
 - Remove tracked rechecker reports and gitignore rck-*-report.md
+
+### Miscellaneous Tasks
+
+- Bump version to 2.1.16
 ## [2.1.15] - 2026-03-23
 
 ### Features
