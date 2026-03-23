@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Protocol audit — 12 issues found and fixed
+## [2.2.5] - 2026-03-23
+
 ### Features
 
 - Propagate adversarial mode from project marker to worktree via prompt
+
+### Miscellaneous Tasks
+
+- Bump version to 2.2.5
 ## [2.2.4] - 2026-03-23
 
 ### Bug Fixes
