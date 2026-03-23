@@ -453,7 +453,10 @@ Parameters:
 ```
 
 2. Read the output, copy to `.rechecker/reports/rck-{TS}_{UID}-[LP00035-IT{N:05d}-FID{ID:05d}]-review.md`
-3. If issues found, launch SCF swarm to fix them (same as Phase A step 6).
+3. If issues found, launch **sonnet-code-fixer** swarm to fix them. Each SCF prompt:
+   `"Fix vulnerabilities in: {file} — Read findings from: .rechecker/reports/rck-...-review.md"`
+   `subagent_type: "sonnet-code-fixer"`, `model: "sonnet"`
+   **The adversarial agent is REVIEW ONLY — it must NEVER fix code. Only sonnet-code-fixer fixes.**
 4. Merge fix reports:
 ```bash
 python3 scripts/pipeline.py merge-iteration --loop 35 --iter {N}
@@ -506,8 +509,8 @@ If no changes to commit (code was already clean), skip the commit but still run 
 
 ## Orchestration Rules
 
-- **Reviews**: Use `mcp__plugin_llm-externalizer_llm-externalizer__code_task` for ALL code reviews. Do NOT spawn opus agents for reviews.
-- **Fixes**: Use `sonnet-code-fixer` agent for ALL fixes. Spawn via Agent tool with `subagent_type: "sonnet-code-fixer"`, `model: "sonnet"`.
+- **Reviews**: Use `mcp__plugin_llm-externalizer_llm-externalizer__code_task` for ALL code reviews (including adversarial). Do NOT spawn opus agents for reviews.
+- **Fixes**: Use `sonnet-code-fixer` agent for ALL fixes in ALL loops (including adversarial). The adversarial-auditor agent is REVIEW ONLY — it must NEVER be used to fix code.
 - **File ownership**: Each review/fix handles exclusive files. No overlapping.
 - **Data flow**: ALL data exchange via files. Never pass findings inline — only file paths.
 - **Parallel execution**: You can call the externalizer MCP for multiple files in parallel (up to 5 concurrent calls on OpenRouter). Spawn fix agent swarms in parallel.
