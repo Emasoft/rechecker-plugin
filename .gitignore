@@ -1,6 +1,7 @@
 # Rechecker runtime artifacts
 .rechecker/
 rck-*-merge-pending.md
+rck-*-report.md
 
 # LLM Externalizer output
 llm_externalizer_output/
