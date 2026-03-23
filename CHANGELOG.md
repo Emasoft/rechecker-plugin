@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Add maxTurns cap and token usage tracking per worktree
+## [2.2.10] - 2026-03-23
+
 ### Bug Fixes
 
 - Recursion guard must also catch legacy worktree-rechecker- prefix
+
+### Miscellaneous Tasks
+
+- Bump version to 2.2.10
 ## [2.2.9] - 2026-03-23
 
 ### Features
