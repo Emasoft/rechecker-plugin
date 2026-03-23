@@ -329,7 +329,7 @@ This creates `rck-{TS}_{UID}-report.md` in the worktree root and cleans up inter
 ## Step 6 — Commit and Exit
 
 ```bash
-git add -A -- ':!.tldr' ':!.tldrignore' ':!.tldr_session_*' && git commit -m "rechecker: automated review fixes"
+git add -A -- ':!.tldr' ':!.tldrignore' ':!.tldr_session_*' ':!rck-*-report.md' ':!.rechecker/' && git commit -m "rechecker: automated review fixes"
 python3 scripts/pipeline.py progress-complete
 ```
 If no changes to commit (code was already clean), skip the commit but still run `progress-complete`. Exit.
