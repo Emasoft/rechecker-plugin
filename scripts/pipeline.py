@@ -56,6 +56,100 @@ MAX_AGENTS = 20
 MAX_FILES_PER_MACRO = MAX_AGENTS * MAX_SMALL_PER_GROUP  # 200
 
 
+# File extensions worth rechecking (source code, config, agents/skills, UI)
+_RECHECK_EXTENSIONS = {
+    # Source code
+    ".py", ".rs", ".ts", ".js", ".tsx", ".jsx", ".go", ".c", ".cpp", ".cc", ".cxx",
+    ".h", ".hpp", ".hxx", ".java", ".rb", ".php", ".swift", ".kt", ".kts", ".scala",
+    ".lua", ".sh", ".bash", ".zsh", ".cs", ".ex", ".exs", ".erl", ".hs", ".ml", ".r",
+    ".jl", ".pl", ".pm", ".m", ".mm", ".zig", ".nim", ".v", ".sv", ".vhd", ".vhdl",
+    ".dart", ".groovy", ".clj", ".cljs", ".elm", ".f90", ".f95", ".sol", ".move",
+    # Config / data
+    ".json", ".yaml", ".yml", ".toml", ".cfg", ".ini", ".conf", ".plist", ".xml",
+    ".env.example", ".editorconfig",
+    # Build
+    ".cmake", ".proj", ".csproj", ".fsproj", ".sln", ".gradle", ".build",
+    ".mk", ".mak",
+    # UI / layout
+    ".xib", ".storyboard", ".xaml", ".qml", ".ui", ".svg",
+    # Claude Code agent/skill/command/rules (markdown, handled by name check below)
+}
+
+# Filenames (exact, case-insensitive) that are always rechecked regardless of extension
+_RECHECK_FILENAMES = {
+    "readme.md", "makefile", "cmakelists.txt", "dockerfile",
+    "docker-compose.yml", "docker-compose.yaml",
+    "justfile", "taskfile.yml", "rakefile", "gemfile",
+    "skill.md",  # Claude skill definition
+}
+
+# Path patterns that identify agent/skill/command/rules markdown files.
+# Match both "/agents/" (mid-path) and "agents/" (start of relative path).
+_RECHECK_PATH_PATTERNS = [
+    "agents/", "skills/", "commands/", "rules/",
+]
+
+# Filenames and extensions to always SKIP (even if extension matches)
+_SKIP_FILENAMES = {
+    "changelog.md", "backlog.md", "release_notes.md", "release-notes.md",
+    "releases.md", "contributing.md", "contributors.md", "code_of_conduct.md",
+    "authors.md", "authors", "license", "license.md", "licence", "licence.md",
+    "security.md", "funding.yml",
+    # Lock files (auto-generated, not worth reviewing)
+    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb",
+    "composer.lock", "cargo.lock", "gemfile.lock", "poetry.lock",
+    "uv.lock", "pdm.lock", "pipdeptree.json",
+}
+
+_SKIP_EXTENSIONS = {
+    ".mdx", ".log", ".lock", ".min.js", ".min.css", ".map",
+    ".d.ts", ".snap", ".fixture", ".patch", ".diff",
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".avif",
+    ".mp3", ".mp4", ".wav", ".ogg", ".webm", ".mov", ".avi",
+    ".ttf", ".otf", ".woff", ".woff2", ".eot",
+    ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar",
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".pyc", ".pyo", ".class", ".o", ".so", ".dylib", ".dll", ".exe",
+    ".db", ".sqlite", ".sqlite3",
+}
+
+
+def _should_recheck(file_path: str) -> bool:
+    """Determine if a file should be rechecked based on extension and name rules."""
+    p = Path(file_path)
+    name_lower = p.name.lower()
+    suffix_lower = p.suffix.lower()
+    # Check compound extensions like .min.js, .d.ts
+    suffixes_lower = "".join(s.lower() for s in p.suffixes)
+
+    # Always skip known non-code files
+    if name_lower in _SKIP_FILENAMES:
+        return False
+    if suffix_lower in _SKIP_EXTENSIONS:
+        return False
+    if suffixes_lower in _SKIP_EXTENSIONS:
+        return False
+
+    # Always recheck known filenames
+    if name_lower in _RECHECK_FILENAMES:
+        return True
+
+    # Recheck agent/skill/command/rules .md files by path pattern
+    path_str = file_path.replace("\\", "/").lower()
+    if suffix_lower == ".md":
+        return any(pat in path_str for pat in _RECHECK_PATH_PATTERNS)
+
+    # Recheck by extension
+    if suffix_lower in _RECHECK_EXTENSIONS:
+        return True
+
+    # Build files without extensions (Makefile variants)
+    if name_lower in {"makefile", "gnumakefile", "bsdmakefile"}:
+        return True
+
+    return False
+
+
 def _now() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -267,10 +361,19 @@ def cmd_init(args: argparse.Namespace) -> None:
         print("ERROR: .rechecker/files.txt not found", file=sys.stderr)
         sys.exit(1)
 
-    file_paths = [line.strip() for line in files_txt.read_text().splitlines() if line.strip()]
-    if not file_paths:
+    all_paths = [line.strip() for line in files_txt.read_text().splitlines() if line.strip()]
+    if not all_paths:
         print("ERROR: No files in .rechecker/files.txt", file=sys.stderr)
         sys.exit(1)
+
+    # Filter to only files worth rechecking (source code, config, agents, etc.)
+    file_paths = [p for p in all_paths if _should_recheck(p)]
+    skipped = len(all_paths) - len(file_paths)
+    if skipped:
+        print(f"Filtered: {len(file_paths)} files to recheck, {skipped} skipped (docs, logs, media, etc.)")
+    if not file_paths:
+        print("No recheckable files in commit — all skipped.")
+        sys.exit(0)
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
