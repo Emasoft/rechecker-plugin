@@ -6,7 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Recheck skill now copies reports and deploys merge script
+## [2.1.18] - 2026-03-23
+
+### Bug Fixes
+
 - Only commit source files from files.txt, never git add -A
+
+### Miscellaneous Tasks
+
+- Bump version to 2.1.18
 ## [2.1.17] - 2026-03-23
 
 ### Bug Fixes
