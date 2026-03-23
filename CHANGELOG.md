@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Add adversarial audit loop (LP00035) between functionality and final lint
+## [2.2.2] - 2026-03-23
+
 ### Bug Fixes
 
 - Address all adversarial audit findings in merge script
+
+### Miscellaneous Tasks
+
+- Bump version to 2.2.2
 ## [2.2.1] - 2026-03-23
 
 ### Features
