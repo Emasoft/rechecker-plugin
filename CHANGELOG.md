@@ -6,7 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Use file size (100KB) instead of line count for huge-file threshold
+## [2.1.9] - 2026-03-23
+
+### Bug Fixes
+
 - Lower huge-file threshold from 5000 to 1500 lines (~19K tokens)
+
+### Miscellaneous Tasks
+
+- Bump version to 2.1.9
 ## [2.1.8] - 2026-03-23
 
 ### Features
