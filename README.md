@@ -37,7 +37,7 @@ You keep working while the review happens in the background.
 First, add the marketplace (one-time setup):
 
 ```bash
-claude plugin marketplace add Emasoft/emasoft-plugins
+claude plugin marketplace add emasoft-plugins
 ```
 
 Then install the plugin:
@@ -139,7 +139,7 @@ You commit code
 PostToolUse[Bash] hook detects "git commit" ─── async (non-blocking)
       │
       ▼
-rechecker.py finds all git roots, copies merge-worktrees.sh
+rechecker.py finds all git roots, copies merge-worktrees.sh to .rechecker/
       │
       ▼
 For each repo: claude --worktree rck-{uid}
@@ -262,7 +262,6 @@ The plugin works **out of the box** with no configuration needed.
 The plugin automatically adds `.rechecker/` entries to your project's `.gitignore`. You should also add:
 
 ```gitignore
-.rechecker/
 docs_dev/
 ```
 
