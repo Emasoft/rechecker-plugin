@@ -42,8 +42,8 @@ BIG_FILE_BYTES = 10_000
 
 # Files above this threshold are routed to big-files-auditor (opus single-pass)
 # instead of the normal LLM Externalizer review loop.
-# 80KB ≈ 20K tokens — conservative limit for externalizer reliability.
-HUGE_FILE_BYTES = 80_000
+# 100KB ≈ 25K tokens — conservative limit for externalizer reliability.
+HUGE_FILE_BYTES = 100_000
 
 # Group size limits
 MAX_BIG_PER_GROUP = 3
@@ -335,7 +335,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     big_count = sum(1 for f in files.values() if f["category"] == "big")
     small_count = sum(1 for f in files.values() if f["category"] == "small")
     print(f"Initialized: {len(files)} files, {len(all_groups)} groups, {len(macro_groups)} macro-group(s)")
-    print(f"  Huge (>80KB, BFA): {huge_count}, Big: {big_count}, Small: {small_count}")
+    print(f"  Huge (>100KB, BFA): {huge_count}, Big: {big_count}, Small: {small_count}")
     if huge_fids:
         for fid in huge_fids:
             info = files[fid]
