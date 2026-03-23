@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Lower huge-file threshold from 5000 to 1500 lines (~19K tokens)
+## [2.1.8] - 2026-03-23
+
 ### Features
 
 - Big-files-auditor agent for files >5000 lines
+
+### Miscellaneous Tasks
+
+- Bump version to 2.1.8
 
 ### Rechecker
 
