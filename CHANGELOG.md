@@ -6,7 +6,20 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Remove extraneous f-prefix (ruff F541)
+
+### Features
+
+- Make rechecker notification unmissable + rewrite README for v2.1.x
+## [2.1.6] - 2026-03-23
+
+### Bug Fixes
+
 - Update recheck skill to use merge-worktrees.sh and current architecture
+
+### Miscellaneous Tasks
+
+- Bump version to 2.1.6
 ## [2.1.5] - 2026-03-23
 
 ### Features
