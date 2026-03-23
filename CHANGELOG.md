@@ -6,7 +6,25 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Remove duplicate entries in CHANGELOG
+
+### Features
+
+- Filter files to only recheck source code and critical configs
+
+### Rechecker
+
+- Automated review fixes
+- Automated review fixes
+## [2.1.12] - 2026-03-23
+
+### Bug Fixes
+
 - Set huge-file threshold to 100KB (~25K tokens)
+
+### Miscellaneous Tasks
+
+- Bump version to 2.1.12
 
 ### Rechecker
 
@@ -98,6 +116,7 @@ All notable changes to this project will be documented in this file.
 
 ### Rechecker
 
+- Automated review fixes
 - Automated review fixes
 ## [2.1.3] - 2026-03-22
 
@@ -225,6 +244,7 @@ All notable changes to this project will be documented in this file.
 ### Testing
 
 - Verify PostToolUse fires for git commit
+- Verify PostToolUse fires for git commit
 ## [2.0.43] - 2026-03-21
 
 ### Bug Fixes
@@ -269,6 +289,7 @@ All notable changes to this project will be documented in this file.
 
 ### Rechecker
 
+- Automated review fixes
 - Automated review fixes
 ## [2.0.39] - 2026-03-21
 
