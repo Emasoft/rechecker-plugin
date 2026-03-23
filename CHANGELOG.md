@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Address all adversarial audit findings in merge script
+## [2.2.1] - 2026-03-23
+
 ### Features
 
 - Ultra-safe merge script with lock, rollback, and full verification
+
+### Miscellaneous Tasks
+
+- Bump version to 2.2.1
 ## [2.2.0] - 2026-03-23
 
 ### Bug Fixes
