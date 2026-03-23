@@ -6,7 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Major safety overhaul of merge script and fixer agent
+## [2.1.19] - 2026-03-23
+
+### Bug Fixes
+
 - Recheck skill now copies reports and deploys merge script
+
+### Miscellaneous Tasks
+
+- Bump version to 2.1.19
 ## [2.1.18] - 2026-03-23
 
 ### Bug Fixes
