@@ -336,30 +336,52 @@ def main() -> None:
         _log(f"  wrote {notice_path}")
 
     # Build context for Claude (additionalContext) AND user (systemMessage)
+    has_fixes = any(r["report"] for r in results)
+    git_root = results[0]["root"]
+
     context_lines = [
-        "## Rechecker: Review Complete — Action Required",
+        "",
+        "=======================================================================",
+        "  RECHECKER PLUGIN: CODE REVIEW COMPLETE — YOU MUST MERGE THE FIXES",
+        "=======================================================================",
+        "",
+        "The rechecker plugin finished reviewing your recent commit(s).",
+        "Bug fixes have been committed to worktree branches and are ready to merge.",
         "",
     ]
-    has_fixes = False
+
     for r in results:
         if r["report"]:
-            context_lines.append(f"- **{r['wt_name']}**: fixes on branch `{r['branch']}`. Report: `{r['report']}`")
-            has_fixes = True
+            context_lines.append(f"  - Branch `{r['branch']}` has fixes. Report: `{r['report']}`")
         else:
-            context_lines.append(f"- **{r['wt_name']}**: no issues found (branch `{r['branch']}`)")
+            context_lines.append(f"  - Branch `{r['branch']}`: code was clean, no fixes needed.")
+    context_lines.append("")
 
     if has_fixes:
-        git_root = results[0]["root"]
         context_lines.extend([
-            "",
-            "Merge all rechecker fixes at once:",
+            ">>> REQUIRED ACTION: Run this command NOW to merge all fixes:",
             "",
             "```bash",
             f'cd "{git_root}" && bash .rechecker/merge-worktrees.sh',
             "```",
             "",
-            "Or read individual reports first, then merge selectively.",
+            "This merges all fix branches, cleans up worktrees, and deletes",
+            "temporary branches and files. It is fully automated and non-blocking.",
+            "",
+            ">>> DO NOT SKIP THIS STEP. Unmerged rechecker branches accumulate",
+            "    and waste disk space. The fixes will NOT appear in your code",
+            "    until you merge them.",
+            "",
+            "Read the reports in docs_dev/ after merging to see what was fixed.",
         ])
+    else:
+        context_lines.append("No fixes needed — all reviewed code was clean.")
+
+    context_lines.extend([
+        "",
+        "=======================================================================",
+        "",
+    ])
 
     context_msg = "\n".join(context_lines)
 
@@ -368,7 +390,7 @@ def main() -> None:
         "hookSpecificOutput": {
             "additionalContext": context_msg,
         },
-        "systemMessage": f"Rechecker done: {len(results)} branch(es) reviewed. Run: bash .rechecker/merge-worktrees.sh",
+        "systemMessage": f"RECHECKER: Review done. Run: bash .rechecker/merge-worktrees.sh",
     }
     print(json.dumps(output))
 

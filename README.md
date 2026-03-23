@@ -7,7 +7,7 @@
 [![Validation](https://github.com/Emasoft/rechecker-plugin/actions/workflows/validate.yml/badge.svg)](https://github.com/Emasoft/rechecker-plugin/actions/workflows/validate.yml)
 <!--BADGES-END-->
 
-A Claude Code plugin that **automatically reviews and fixes code changes after every git commit**. It launches a 4-agent swarm in an isolated git worktree, iterating through lint checks, correctness reviews, and intent verification until the code is clean.
+A Claude Code plugin that **automatically reviews and fixes code changes after every git commit**. It launches a review pipeline in an isolated git worktree, iterating through lint checks, correctness reviews, and intent verification until the code is clean.
 
 ---
 
@@ -22,8 +22,9 @@ This plugin automates the entire review-fix cycle. After every commit, it:
 1. Detects the commit in the background (non-blocking)
 2. Launches an orchestrator in an isolated git worktree
 3. Runs 4 iterative loops (lint → correctness → intent → final lint)
-4. Fixes all issues found using parallel agent swarms
-5. Commits the fixes and merges back to your branch
+4. Reviews code via LLM Externalizer (grok/gemini on OpenRouter — not Claude tokens)
+5. Fixes all issues using parallel sonnet-code-fixer agents
+6. Commits the fixes and notifies Claude to merge
 
 You keep working while the review happens in the background.
 
@@ -57,6 +58,7 @@ claude plugin install --source github Emasoft/rechecker-plugin
 - **Python 3.12+** on PATH — hook detection script
 - **git** — worktrees, diffs, commits
 - **Max subscription** — `claude --worktree` requires Max subscription auth
+- **LLM Externalizer plugin** — reviews are externalized to OpenRouter (grok/gemini)
 
 ---
 
@@ -73,6 +75,26 @@ What triggers it:
 What does NOT trigger it:
 - `git commit --amend` (skipped intentionally)
 - Non-Bash tools (only Bash commands are monitored)
+- Commands inside a rechecker worktree (recursion guard)
+
+### After the Review Completes
+
+When the rechecker finishes, Claude receives a prominent notification telling it to merge. The merge script handles everything automatically:
+
+```bash
+bash .rechecker/merge-worktrees.sh
+```
+
+This script:
+- Removes worktrees (can't merge a checked-out branch)
+- Auto-stashes dirty working tree
+- Merges each branch with `-X ours` (current branch wins on conflict)
+- Moves reports to `docs_dev/`
+- Deletes merged branches
+- Auto-commits cleanup
+- Restores stash
+
+Options: `--dry-run` (preview), `--no-cleanup` (skip branch/file deletion)
 
 ### Manual Mode (`/recheck`)
 
@@ -82,23 +104,26 @@ Run the review pipeline on demand:
 /rechecker-plugin:recheck
 ```
 
-This does exactly the same thing as the automatic hook, but you control when it runs. Useful for:
-- Re-checking after a manual edit
-- Running the pipeline on a commit that happened before the plugin was installed
-- Verifying the code is clean before pushing
+### Resume After Interruption
 
-### Reading the Report
+If Claude gets rate-limited or the session is interrupted, the plugin automatically detects pending work when the session resumes (`SessionStart[resume]` hook). It tells Claude about:
+- **Pending merges** — completed reviews waiting to be merged
+- **Incomplete runs** — worktrees interrupted mid-pipeline, with progress state for resume
 
-After each run, a report is saved to:
+Progress is tracked atomically in `.rechecker/rck-progress.json`, so the orchestrator can skip completed loops and resume from where it stopped.
+
+### Reading the Reports
+
+After merging, reports are saved to:
 
 ```
-reports_dev/rechecker-report-{TIMESTAMP}.md
+docs_dev/rck-{TIMESTAMP}_{UID}-report.md
 ```
 
 The report contains:
 - Date and summary
-- Total issues found and fixed
-- Per-issue details: file, line, severity, description
+- Total issues found and fixed per loop
+- Per-issue details: file, severity, description, fix applied
 
 ---
 
@@ -108,46 +133,62 @@ The report contains:
 You commit code
       │
       ▼
-PostToolUse hook detects "git commit" ─── async: true (non-blocking)
+PostToolUse[Bash] hook detects "git commit" ─── async (non-blocking)
       │
       ▼
-rechecker.py finds all git roots in the command
+rechecker.py finds all git roots, copies merge-worktrees.sh
       │
       ▼
-For each repo: claude --worktree rechecker-{name}
+For each repo: claude --worktree rck-{uid}
       │
       ▼
-┌─────────────────────────────────────────────┐
-│          ORCHESTRATOR (opus[1m])             │
-│                                             │
-│  LOOP 1: Lint ──▶ sonnet fixes ──▶ repeat   │
-│          until 0 lint errors                │
-│                                             │
-│  LOOP 2: Opus code review ──▶ sonnet fixes  │
-│          ──▶ repeat until 0 bugs            │
-│                                             │
-│  LOOP 3: Opus intent review ──▶ sonnet fixes│
-│          ──▶ repeat until 0 intent issues   │
-│                                             │
-│  LOOP 4: Final lint ──▶ sonnet fixes        │
-│          ──▶ repeat until 0 lint errors     │
-│                                             │
-│  Merge reports ──▶ ONE commit ──▶ exit      │
-└─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│          ORCHESTRATOR (sonnet)                        │
+│                                                      │
+│  Progress: .rechecker/rck-progress.json (atomic)     │
+│                                                      │
+│  LOOP 1: Lint ──▶ sonnet-code-fixer ──▶ repeat       │
+│          until 0 lint errors                         │
+│                                                      │
+│  LOOP 2: LLM Externalizer review (correctness)      │
+│          ──▶ sonnet-code-fixer ──▶ repeat            │
+│          until 0 bugs                                │
+│                                                      │
+│  LOOP 3: LLM Externalizer review (intent vs reality)│
+│          ──▶ sonnet-code-fixer ──▶ repeat            │
+│          until 0 intent issues                       │
+│                                                      │
+│  LOOP 4: Final lint ──▶ sonnet-code-fixer            │
+│          ──▶ repeat until 0 lint errors              │
+│                                                      │
+│  Merge reports ──▶ ONE commit ──▶ exit               │
+└──────────────────────────────────────────────────────┘
       │
       ▼
-Claude Code merges the worktree back to your branch
-Report moved to reports_dev/
+rechecker.py copies report, writes merge-pending notice
+      │
+      ▼
+Claude receives additionalContext: "MERGE THE FIXES NOW"
+      │
+      ▼
+Claude runs: bash .rechecker/merge-worktrees.sh
+      │
+      ▼
+Reports in docs_dev/. Done.
 ```
 
-### The 4 Agents
+### Components
 
-| Agent | Model | What It Does |
-|-------|-------|--------------|
-| **rechecker-orchestrator** | opus[1m] | Coordinates all 4 loops. Spawns reviewer and fixer swarms in parallel. Makes exactly 1 commit at the end. |
-| **opus-code-reviewer** | opus[1m] | Reviews one file for correctness bugs across 13 categories (logic errors, null handling, types, race conditions, resource leaks, security, etc.). Writes findings to JSON. Does NOT fix anything. |
-| **opus-functionality-reviewer** | opus[1m] | Verifies one file does what the commit message claims. Checks 9 categories (intent mismatch, incomplete implementation, broken contracts, silent failures, etc.). Writes findings to JSON. Does NOT fix anything. |
-| **sonnet-code-fixer** | sonnet | Reads a findings JSON file and applies root-cause fixes to the source file. No workarounds, no band-aids. Does NOT commit. |
+| Component | Model/Tool | What It Does |
+|-----------|------------|--------------|
+| **rechecker.py** | Python | PostToolUse hook. Detects `git commit`, launches worktree, copies reports, notifies Claude. |
+| **rechecker-orchestrator** | sonnet | Coordinates all 4 loops. Uses pipeline.py for progress tracking and report merging. |
+| **LLM Externalizer MCP** | grok/gemini (OpenRouter) | Reviews each file for correctness bugs and intent mismatches. NOT Claude tokens. |
+| **sonnet-code-fixer** | sonnet | Agent swarm worker. Reads findings, applies root-cause fixes to source files. |
+| **pipeline.py** | Python | CLI helper for file grouping, progress tracking (atomic writes), and report merging. |
+| **merge-worktrees.sh** | bash | Standalone merge script. Handles stash, merge, cleanup, branch deletion. |
+| **resume-check.py** | Python | SessionStart[resume] hook. Detects pending merges and incomplete runs after interruptions. |
+| **log-stop-failure.py** | Python | StopFailure hook. Logs API errors (rate limits, server errors). |
 
 ### Inter-Agent Data Exchange
 
@@ -155,13 +196,16 @@ Agents exchange data through files, never inline in prompts:
 
 ```
 .rechecker/
-  files.txt                          # changed files list
-  commit-message.txt                 # commit message for intent analysis
+  files.txt                                    # changed files list
+  commit-message.txt                           # commit message for intent analysis
+  rck-progress.json                            # atomic progress tracking
+  merge-worktrees.sh                           # standalone merge script (copied from plugin)
   reports/
-    lint-pass{N}.txt                 # linter output per pass
-    ocr-pass{N}-{SAFE_NAME}.json    # code review findings
-    ofr-pass{N}-{SAFE_NAME}.json    # intent review findings
-    scf-pass{N}-{SAFE_NAME}.md      # fix summaries
+    lint-pass{N}.txt                           # linter output per pass
+    rck-{TS}_{UID}-[LP-IT-FID]-review.md       # LLM Externalizer review findings
+    rck-{TS}_{UID}-[LP-IT-FID]-fix.md          # sonnet-code-fixer fix reports
+    rck-{TS}_{UID}-[LP-IT]-iteration.md        # merged iteration report
+    rck-{TS}_{UID}-[LP]-loop.md                # merged loop report
 ```
 
 ---
@@ -173,20 +217,23 @@ rechecker-plugin/
 ├── .claude-plugin/
 │   └── plugin.json                    # Plugin manifest
 ├── hooks/
-│   └── hooks.json                     # PostToolUse (async) + StopFailure
+│   └── hooks.json                     # PostToolUse + SessionStart + StopFailure
 ├── agents/
-│   ├── rechecker-orchestrator.md      # Opus orchestrator
-│   ├── opus-code-reviewer.md          # Opus reviewer (correctness)
-│   ├── opus-functionality-reviewer.md # Opus reviewer (intent)
-│   └── sonnet-code-fixer.md           # Sonnet fixer
+│   ├── rechecker-orchestrator.md      # Sonnet orchestrator (4 loops + progress)
+│   ├── opus-code-reviewer.md          # Legacy (unused — reviews via LLM Externalizer)
+│   ├── opus-functionality-reviewer.md # Legacy (unused — reviews via LLM Externalizer)
+│   └── sonnet-code-fixer.md           # Sonnet fixer agent
 ├── skills/
 │   └── recheck/
 │       └── SKILL.md                   # /recheck command
 ├── scripts/
-│   ├── rechecker.py                   # Hook entry point
+│   ├── rechecker.py                   # Hook entry point (PostToolUse)
+│   ├── resume-check.py                # Resume hook (SessionStart)
+│   ├── pipeline.py                    # Pipeline helper (index, groups, progress, merging)
+│   ├── merge-worktrees.sh             # Standalone merge script (git+bash only)
 │   ├── log-stop-failure.py            # StopFailure logger
-│   ├── scan.sh                        # Optional: Docker-based scanning
-│   └── publish.py                     # Dev tool: bump, tag, release
+│   ├── publish.py                     # Dev tool: lint, bump, tag, release
+│   └── scan.sh                        # Optional: Docker-based scanning
 ├── .gitignore
 └── README.md
 ```
@@ -199,20 +246,22 @@ The plugin works **out of the box** with no configuration needed.
 
 | Setting | Default | Location |
 |---------|---------|----------|
-| Max passes per loop | 30 | `rechecker-orchestrator.md` |
-| Hook timeout | 24 hours | `hooks/hooks.json` |
+| Max passes per loop | 5 | `rechecker-orchestrator.md` |
+| Hook timeout | 2 hours | `hooks/hooks.json` |
 | Hook mode | async (non-blocking) | `hooks/hooks.json` |
-| Reviewer model | opus[1m] | Agent frontmatter |
+| Orchestrator model | sonnet | Agent frontmatter |
 | Fixer model | sonnet | Agent frontmatter |
+| Review engine | LLM Externalizer (OpenRouter) | Orchestrator instructions |
 | Permission mode | bypass all | `--dangerously-skip-permissions` |
 
 ### Gitignore
 
-Add these to your project's `.gitignore` (the plugin creates these directories):
+The plugin automatically adds `.rechecker/` entries to your project's `.gitignore`. You should also add:
 
 ```gitignore
 .rechecker/
 reports_dev/
+docs_dev/
 ```
 
 ---
@@ -227,7 +276,7 @@ cd /project-a && git commit -m "fix A" && cd /project-b && git commit -m "fix B"
 
 The hook detects both commits, finds each git root, and launches a **separate orchestrator worktree for each repo**. Each repo is reviewed independently and in parallel.
 
-Git submodules are also supported — the hook uses `git rev-parse --show-toplevel` for robust git root detection.
+Git submodules are also supported — the hook uses `git rev-parse --show-toplevel` for robust git root detection, and `--ignore-submodules` in dirty checks.
 
 ---
 
@@ -236,11 +285,13 @@ Git submodules are also supported — the hook uses `git rev-parse --show-toplev
 | Concern | How It's Handled |
 |---------|-----------------|
 | **Git state** | All work happens in an isolated worktree — your working tree is never touched |
-| **Infinite loops** | Max 30 passes per loop; orchestrator exits if issues don't converge |
-| **Concurrent reviews** | Each git root gets its own named worktree — no conflicts |
+| **Infinite loops** | Max 5 passes per loop; orchestrator exits if issues don't converge |
+| **Recursion** | Branch name check prevents rechecker from triggering inside its own worktrees |
+| **Concurrent reviews** | Each commit gets a unique worktree (UUID-based) — no conflicts |
 | **Non-blocking** | Hook runs async — you keep working while the review happens |
-| **Worktree cleanup** | Claude Code automatically cleans up worktrees at session end |
-| **Report persistence** | Report is committed in the worktree, merged to main, then moved to `reports_dev/` |
+| **Interruption** | Progress tracked atomically; SessionStart[resume] hook detects incomplete runs |
+| **TLDR artifacts** | Automatically gitignored in target projects to prevent commit pollution |
+| **Report persistence** | Reports moved to docs_dev/ during merge — never lost |
 
 ---
 
