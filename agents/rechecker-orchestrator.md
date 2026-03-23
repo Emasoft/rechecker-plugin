@@ -310,6 +310,85 @@ python3 scripts/pipeline.py merge-loop --loop 3
 python3 scripts/pipeline.py progress-update --loop 3 --action end-loop
 ```
 
+## Step 3.5 — [LOOP 3.5] Adversarial Audit (LP00035) — OPTIONAL
+
+This loop is **optional**. Run it only if the commit touches security-sensitive code (auth, networking, file I/O, user input handling, crypto, permissions, database queries) or if the project has a `.rechecker/adversarial` marker file.
+
+To check: `[[ -f .rechecker/adversarial ]] && echo "RUN" || echo "SKIP"`
+
+If skipping, go directly to Step 4.
+
+Mark loop start:
+```bash
+python3 scripts/pipeline.py progress-update --loop 35 --action start-loop
+```
+
+**Use the LLM Externalizer MCP for adversarial reviews.**
+
+**Single pass (no iteration — adversarial audit runs once):**
+
+Mark iteration start:
+```bash
+python3 scripts/pipeline.py progress-update --loop 35 --action start-iter --iter 1
+```
+
+1. For each file, call the LLM Externalizer to audit it adversarially.
+```
+Tool: mcp__plugin_llm-externalizer_llm-externalizer__code_task
+Parameters:
+  instructions: |
+    Audit the source code below, with an adversarial stance, finding issues
+    and shortcomings as an external adversary would do.
+
+    Do NOT report: style, performance, unused variables, missing docs.
+    Only report things that can be EXPLOITED or TRIGGERED to cause incorrect behavior.
+
+    For each finding, identify its location by quoting the relevant code
+    and naming the enclosing scope. Do NOT use line numbers.
+
+    Respond in markdown. For each vulnerability use this format:
+
+    ### VULN: <short title>
+    **Category**: <input|concurrency|resource|state|type|trust|error>
+    **Attack**: <how an adversary would exploit this>
+    **Impact**: <what happens if exploited>
+    **Location**: <scope/symbol/code quote that identifies where>
+
+    If no vulnerabilities found, respond with exactly: NO ISSUES FOUND
+  input_files_paths: "<source file path>"
+  ensemble: false
+  max_tokens: 4000
+```
+
+2. The tool returns a file path to the output .md file. Read it.
+3. Copy the output file to:
+   `.rechecker/reports/rck-{TS}_{UID}-[LP00035-IT00001-FID{ID:05d}]-review.md`
+4. Check the content: if it contains "NO ISSUES FOUND", this file is clean — mark it:
+   ```bash
+   python3 scripts/pipeline.py progress-update --loop 35 --action file-clean --fid {FID}
+   ```
+   Otherwise, count the `### VULN:` headers to know how many vulnerabilities were found.
+5. If ALL reviews say "NO ISSUES FOUND" → exit loop, go to Step 4.
+6. Launch SCF swarm for files with vulnerabilities. Each SCF prompt:
+   `"Fix vulnerabilities in: {file} — Read findings from: .rechecker/reports/rck-...-review.md"`
+   `subagent_type: "sonnet-code-fixer"`, `model: "sonnet"`
+   After each file is fixed, mark it:
+   ```bash
+   python3 scripts/pipeline.py progress-update --loop 35 --action file-done --fid {FID}
+   ```
+7. Merge fix reports:
+```bash
+python3 scripts/pipeline.py merge-iteration --loop 35 --iter 1
+```
+
+**No iteration. One pass only.** The adversarial audit is expensive and diminishing returns are steep.
+
+8. After loop ends, merge and mark loop done:
+```bash
+python3 scripts/pipeline.py merge-loop --loop 35
+python3 scripts/pipeline.py progress-update --loop 35 --action end-loop
+```
+
 ## Step 4 — [LOOP 4] Final Linting (LP00004)
 
 Mark loop start:
@@ -354,7 +433,7 @@ If no changes to commit (code was already clean), skip the commit but still run 
 - **Max passes**: 5 per loop. If doesn't converge, note in report and move on.
 - **No commits until Step 6.**
 - **Externalizer constraints**: The externalizer model has NO tools, NO file access. It receives file content inline in markdown backticks. Each request is independent — the model cannot see other files from other requests. You must embed any context (like the commit message) directly in the `instructions` parameter.
-- **Review output format**: The externalizer returns markdown with `### BUG:` or `### ISSUE:` sections. Check for "NO ISSUES FOUND" to determine if a file is clean. Copy the output .md directly to `.rechecker/reports/` — no JSON extraction needed.
+- **Review output format**: The externalizer returns markdown with `### BUG:`, `### ISSUE:`, or `### VULN:` sections. Check for "NO ISSUES FOUND" to determine if a file is clean. Copy the output .md directly to `.rechecker/reports/` — no JSON extraction needed.
 
 ## Completion Checklist
 
@@ -367,6 +446,7 @@ If no changes to commit (code was already clean), skip the commit but still run 
 - [ ] Loop 1 (LP00001): 0 lint errors
 - [ ] Loop 2 (LP00002): 0 code correctness issues (via LLM Externalizer)
 - [ ] Loop 3 (LP00003): 0 functionality issues (via LLM Externalizer)
+- [ ] Loop 3.5 (LP00035): adversarial audit (if applicable, or skipped)
 - [ ] Loop 4 (LP00004): 0 lint errors (final)
 - [ ] Ran `pipeline.py merge-final` → final report created
 - [ ] Single commit created (or skipped if clean)

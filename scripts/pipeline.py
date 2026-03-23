@@ -665,7 +665,7 @@ def cmd_count_issues(args: argparse.Namespace) -> None:
             content = report.read_text()
             if "NO ISSUES FOUND" in content:
                 continue
-            total += content.count("### BUG:") + content.count("### ISSUE:")
+            total += content.count("### BUG:") + content.count("### ISSUE:") + content.count("### VULN:")
         except OSError:
             pass
 
@@ -721,6 +721,7 @@ def cmd_progress_init(_args: argparse.Namespace) -> None:
             "1": {"status": "pending", "files_done": [], "files_clean": []},
             "2": {"status": "pending", "iter": 0, "files_done": [], "files_clean": []},
             "3": {"status": "pending", "iter": 0, "files_done": [], "files_clean": []},
+            "35": {"status": "pending", "iter": 0, "files_done": [], "files_clean": []},
             "4": {"status": "pending", "files_done": [], "files_clean": []},
         },
         "committed": False,
