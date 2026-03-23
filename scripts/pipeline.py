@@ -56,98 +56,157 @@ MAX_AGENTS = 20
 MAX_FILES_PER_MACRO = MAX_AGENTS * MAX_SMALL_PER_GROUP  # 200
 
 
-# File extensions worth rechecking (source code, config, agents/skills, UI)
-_RECHECK_EXTENSIONS = {
-    # Source code
-    ".py", ".rs", ".ts", ".js", ".tsx", ".jsx", ".go", ".c", ".cpp", ".cc", ".cxx",
-    ".h", ".hpp", ".hxx", ".java", ".rb", ".php", ".swift", ".kt", ".kts", ".scala",
-    ".lua", ".sh", ".bash", ".zsh", ".cs", ".ex", ".exs", ".erl", ".hs", ".ml", ".r",
-    ".jl", ".pl", ".pm", ".m", ".mm", ".zig", ".nim", ".v", ".sv", ".vhd", ".vhdl",
-    ".dart", ".groovy", ".clj", ".cljs", ".elm", ".f90", ".f95", ".sol", ".move",
-    # Config / data
-    ".json", ".yaml", ".yml", ".toml", ".cfg", ".ini", ".conf", ".plist", ".xml",
-    ".env.example", ".editorconfig",
-    # Build
-    ".cmake", ".proj", ".csproj", ".fsproj", ".sln", ".gradle", ".build",
-    ".mk", ".mak",
-    # UI / layout
-    ".xib", ".storyboard", ".xaml", ".qml", ".ui", ".svg",
-    # Claude Code agent/skill/command/rules (markdown, handled by name check below)
+# ── File filter: blocklist approach ──────────────────────────────────────
+# Instead of enumerating every script/config/UI extension (hundreds), we SKIP
+# known non-code files and INCLUDE everything else. This catches all source
+# code, scripts (.ahk, .au3, .coffee, .ps1, ...), config, build files,
+# UI/layout (.xib, .storyboard, .xaml, .axaml, .qml, .ui, .razor, .cshtml,
+# .aspx, .lottie, .fxml, .kv, .glade, .nib, ...), and agent/skill/command
+# definitions automatically without maintaining a massive allowlist.
+
+# Filenames to always SKIP (case-insensitive)
+_SKIP_FILENAMES = {
+    # Documentation / meta (not code)
+    "changelog.md", "changes.md", "history.md",
+    "backlog.md", "todo.md", "notes.md",
+    "release_notes.md", "release-notes.md", "releases.md",
+    "contributing.md", "contributors.md", "code_of_conduct.md",
+    "authors.md", "authors", "credits.md",
+    "license", "license.md", "license.txt", "licence", "licence.md",
+    "security.md", "funding.yml", "citation.cff",
+    # Lock files (auto-generated)
+    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb",
+    "composer.lock", "cargo.lock", "gemfile.lock", "poetry.lock",
+    "uv.lock", "pdm.lock", "pipdeptree.json", "shrinkwrap.json",
+    "packages.lock.json", "project.assets.json",
+    # Other auto-generated
+    ".ds_store", "thumbs.db", "desktop.ini",
 }
 
-# Filenames (exact, case-insensitive) that are always rechecked regardless of extension
+# Extensions to always SKIP (blocklist — binary, media, docs, generated)
+_SKIP_EXTENSIONS = {
+    # Documentation markup (non-code)
+    ".mdx", ".rst", ".adoc", ".textile",
+    # Logs
+    ".log",
+    # Lock / generated
+    ".lock", ".lockb",
+    # Minified / compiled JS/CSS (not worth reviewing)
+    ".min.js", ".min.css", ".map",
+    # TypeScript declarations (auto-generated)
+    ".d.ts",
+    # Test snapshots / fixtures
+    ".snap", ".fixture",
+    # Patches
+    ".patch", ".diff",
+    # Images
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".avif",
+    ".tiff", ".tif", ".psd", ".ai", ".eps", ".raw", ".cr2", ".nef",
+    ".heic", ".heif", ".jxl",
+    # Video
+    ".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv",
+    ".m4v", ".3gp", ".ogv",
+    # Audio
+    ".mp3", ".wav", ".ogg", ".flac", ".aac", ".wma", ".m4a", ".opus",
+    # Fonts
+    ".ttf", ".otf", ".woff", ".woff2", ".eot",
+    # Archives / packages
+    ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar", ".zst",
+    ".tgz", ".tbz2", ".txz", ".jar", ".war", ".ear",
+    ".deb", ".rpm", ".dmg", ".msi", ".pkg", ".apk", ".ipa",
+    ".appimage", ".flatpak", ".snap",
+    # Office documents
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".odt", ".ods", ".odp", ".rtf",
+    # Compiled / binary objects
+    ".pyc", ".pyo", ".class", ".o", ".obj", ".a", ".lib",
+    ".so", ".dylib", ".dll", ".exe", ".com", ".bin",
+    ".nbin", ".co", ".rpyc", ".elc", ".beam",
+    ".wasm", ".bc",
+    # Compiled platform binaries
+    ".baml", ".xap", ".xbap", ".wmlsc", ".scptd",
+    # Database
+    ".db", ".sqlite", ".sqlite3", ".mdb", ".accdb",
+    # Disk / VM images
+    ".iso", ".img", ".vmdk", ".vdi", ".qcow2",
+    # Certificates / keys (sensitive, don't review)
+    ".pem", ".crt", ".cer", ".key", ".p12", ".pfx", ".jks",
+    # Data dumps (too large, not code)
+    ".sql", ".csv", ".tsv", ".parquet", ".arrow", ".feather",
+    ".npy", ".npz", ".h5", ".hdf5",
+    # Model files
+    ".onnx", ".pt", ".pth", ".safetensors", ".gguf", ".ggml",
+    ".pb", ".tflite",
+    # Figma (binary)
+    ".fig",
+}
+
+# Filenames to always INCLUDE (case-insensitive, overrides skip rules)
 _RECHECK_FILENAMES = {
-    "readme.md", "makefile", "cmakelists.txt", "dockerfile",
-    "docker-compose.yml", "docker-compose.yaml",
-    "justfile", "taskfile.yml", "rakefile", "gemfile",
-    "skill.md",  # Claude skill definition
+    "readme.md",
+    # Build / task files without standard extensions
+    "makefile", "gnumakefile", "bsdmakefile", "cmakelists.txt",
+    "dockerfile", "containerfile",
+    "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml",
+    "justfile", "taskfile.yml", "taskfile.yaml", "rakefile", "gemfile",
+    "gruntfile.js", "gulpfile.js", "webpack.config.js", "rollup.config.js",
+    "vite.config.ts", "vite.config.js", "next.config.js", "next.config.mjs",
+    "tsconfig.json", "jsconfig.json", "babel.config.js", "babel.config.json",
+    ".eslintrc.js", ".eslintrc.json", ".eslintrc.yml",
+    ".prettierrc", ".prettierrc.js", ".prettierrc.json",
+    "tox.ini", "setup.cfg", "setup.py", "pyproject.toml",
+    "cargo.toml", "go.mod", "go.sum",
+    "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts",
+    "pom.xml", "build.xml", "build.sbt",
+    "package.json", "deno.json", "deno.jsonc",
+    # Claude Code agent/skill definitions
+    "skill.md",
 }
 
-# Path patterns that identify agent/skill/command/rules markdown files.
-# Match both "/agents/" (mid-path) and "agents/" (start of relative path).
+# Path patterns that identify agent/skill/command/rules markdown files
 _RECHECK_PATH_PATTERNS = [
     "agents/", "skills/", "commands/", "rules/",
 ]
 
-# Filenames and extensions to always SKIP (even if extension matches)
-_SKIP_FILENAMES = {
-    "changelog.md", "backlog.md", "release_notes.md", "release-notes.md",
-    "releases.md", "contributing.md", "contributors.md", "code_of_conduct.md",
-    "authors.md", "authors", "license", "license.md", "licence", "licence.md",
-    "security.md", "funding.yml",
-    # Lock files (auto-generated, not worth reviewing)
-    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb",
-    "composer.lock", "cargo.lock", "gemfile.lock", "poetry.lock",
-    "uv.lock", "pdm.lock", "pipdeptree.json",
-}
-
-_SKIP_EXTENSIONS = {
-    ".mdx", ".log", ".lock", ".min.js", ".min.css", ".map",
-    ".d.ts", ".snap", ".fixture", ".patch", ".diff",
-    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".avif",
-    ".mp3", ".mp4", ".wav", ".ogg", ".webm", ".mov", ".avi",
-    ".ttf", ".otf", ".woff", ".woff2", ".eot",
-    ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar",
-    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-    ".pyc", ".pyo", ".class", ".o", ".so", ".dylib", ".dll", ".exe",
-    ".db", ".sqlite", ".sqlite3",
-}
-
 
 def _should_recheck(file_path: str) -> bool:
-    """Determine if a file should be rechecked based on extension and name rules."""
+    """Blocklist filter: skip known non-code files, include everything else.
+
+    This catches all source code, scripts, config, build, UI/layout files
+    automatically without maintaining a massive allowlist.
+    """
     p = Path(file_path)
     name_lower = p.name.lower()
     suffix_lower = p.suffix.lower()
-    # Check compound extensions like .min.js, .d.ts
+    # Compound extensions like .min.js, .d.ts
     suffixes_lower = "".join(s.lower() for s in p.suffixes)
 
-    # Always skip known non-code files
+    # 1. Always skip known non-code filenames
     if name_lower in _SKIP_FILENAMES:
         return False
+
+    # 2. Always include known build/config filenames
+    if name_lower in _RECHECK_FILENAMES:
+        return True
+
+    # 3. Skip by extension (binary, media, docs, generated)
     if suffix_lower in _SKIP_EXTENSIONS:
         return False
     if suffixes_lower in _SKIP_EXTENSIONS:
         return False
 
-    # Always recheck known filenames
-    if name_lower in _RECHECK_FILENAMES:
-        return True
-
-    # Recheck agent/skill/command/rules .md files by path pattern
+    # 4. .md files: only include agent/skill/command/rules, skip other docs
     path_str = file_path.replace("\\", "/").lower()
     if suffix_lower == ".md":
         return any(pat in path_str for pat in _RECHECK_PATH_PATTERNS)
 
-    # Recheck by extension
-    if suffix_lower in _RECHECK_EXTENSIONS:
-        return True
+    # 5. Files with no extension: include only known build tool names
+    if not suffix_lower:
+        return name_lower in _RECHECK_FILENAMES
 
-    # Build files without extensions (Makefile variants)
-    if name_lower in {"makefile", "gnumakefile", "bsdmakefile"}:
-        return True
-
-    return False
+    # 6. Everything else with a text-based extension → INCLUDE
+    # This catches all source code, scripts, config, UI/layout, etc.
+    return True
 
 
 def _now() -> str:
