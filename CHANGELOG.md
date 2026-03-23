@@ -6,7 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Skip files >500KB — too large even for opus[1m]
+## [2.1.14] - 2026-03-23
+
+### Features
+
 - Switch file filter from allowlist to blocklist approach
+
+### Miscellaneous Tasks
+
+- Bump version to 2.1.14
 ## [2.1.13] - 2026-03-23
 
 ### Bug Fixes
