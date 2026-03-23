@@ -4,9 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Use top-level additionalContext for async hook output
+- Remove tracked rechecker reports and gitignore rck-*-report.md
+## [2.1.15] - 2026-03-23
+
 ### Features
 
 - Skip files >500KB — too large even for opus[1m]
+
+### Miscellaneous Tasks
+
+- Bump version to 2.1.15
 ## [2.1.14] - 2026-03-23
 
 ### Features
