@@ -6,7 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Only commit source files from files.txt, never git add -A
+## [2.1.17] - 2026-03-23
+
+### Bug Fixes
+
 - Exclude report files and .rechecker/ from worktree commits
+
+### Miscellaneous Tasks
+
+- Bump version to 2.1.17
 ## [2.1.16] - 2026-03-23
 
 ### Bug Fixes
