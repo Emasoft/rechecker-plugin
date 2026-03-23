@@ -99,7 +99,6 @@ All notable changes to this project will be documented in this file.
 ### Rechecker
 
 - Automated review fixes
-- Automated review fixes
 ## [2.1.3] - 2026-03-22
 
 ### Bug Fixes
@@ -226,7 +225,6 @@ All notable changes to this project will be documented in this file.
 ### Testing
 
 - Verify PostToolUse fires for git commit
-- Verify PostToolUse fires for git commit
 ## [2.0.43] - 2026-03-21
 
 ### Bug Fixes
@@ -271,7 +269,6 @@ All notable changes to this project will be documented in this file.
 
 ### Rechecker
 
-- Automated review fixes
 - Automated review fixes
 ## [2.0.39] - 2026-03-21
 
