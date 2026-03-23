@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Recursion guard must also catch legacy worktree-rechecker- prefix
+## [2.2.9] - 2026-03-23
+
 ### Features
 
 - Phase B spawns adversarial-auditor agent for review
+
+### Miscellaneous Tasks
+
+- Bump version to 2.2.9
 ## [2.2.8] - 2026-03-23
 
 ### Bug Fixes
