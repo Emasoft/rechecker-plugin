@@ -41,8 +41,9 @@ BIG_FILE_LINES = 200
 BIG_FILE_BYTES = 10_000
 
 # Files above this threshold are routed to big-files-auditor (opus single-pass)
-# instead of the normal LLM Externalizer review loop
-HUGE_FILE_LINES = 5000
+# instead of the normal LLM Externalizer review loop.
+# ~1500 lines ≈ 75KB ≈ 19K tokens — near the externalizer's reliability limit.
+HUGE_FILE_LINES = 1500
 
 # Group size limits
 MAX_BIG_PER_GROUP = 3
