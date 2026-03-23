@@ -7,7 +7,7 @@ packages = ["scripts"]
 
 [project]
 name = "rechecker-plugin"
-version = "2.1.5"
+version = "2.1.6"
 description = "Automatically reviews and fixes Claude's code changes using a separate Claude instance in a git worktree after commits"
 readme = "README.md"
 requires-python = ">=3.12"

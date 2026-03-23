@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Update recheck skill to use merge-worktrees.sh and current architecture
+## [2.1.5] - 2026-03-23
+
 ### Features
 
 - Merge-worktrees.sh fully automated with auto-stash and -X ours
+
+### Miscellaneous Tasks
+
+- Bump version to 2.1.5
 
 ### Rechecker
 
