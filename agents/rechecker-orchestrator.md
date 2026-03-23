@@ -325,11 +325,14 @@ python3 scripts/pipeline.py progress-update --loop 3 --action end-loop
 
 ## Step 3.5 — [LOOP 3.5] Adversarial Audit (LP00035) — OPTIONAL
 
-This loop is **optional**. Run it only if the commit touches security-sensitive code (auth, networking, file I/O, user input handling, crypto, permissions, database queries) or if the project has a `.rechecker/adversarial` marker file.
+This loop is **optional**. Run it if ANY of these are true:
+1. Your launch prompt contains "ADVERSARIAL MODE ENABLED"
+2. The file `.rechecker/adversarial` exists in the worktree
+3. The commit touches security-sensitive code (auth, crypto, networking, file I/O, user input, permissions, database queries)
 
 To check: `[[ -f .rechecker/adversarial ]] && echo "RUN" || echo "SKIP"`
 
-If skipping, go directly to Step 4.
+If none of the above apply, skip to Step 4.
 
 Mark loop start:
 ```bash
