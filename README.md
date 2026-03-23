@@ -59,6 +59,9 @@ claude plugin install --source github Emasoft/rechecker-plugin
 - **git** — worktrees, diffs, commits
 - **Max subscription** — `claude --worktree` requires Max subscription auth
 - **LLM Externalizer plugin** — reviews are externalized to OpenRouter (grok/gemini)
+  ```bash
+  claude plugin install llm-externalizer@emasoft-plugins
+  ```
 
 ---
 
@@ -260,7 +263,6 @@ The plugin automatically adds `.rechecker/` entries to your project's `.gitignor
 
 ```gitignore
 .rechecker/
-reports_dev/
 docs_dev/
 ```
 
