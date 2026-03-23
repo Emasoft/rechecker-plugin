@@ -390,7 +390,7 @@ def main() -> None:
         "hookSpecificOutput": {
             "additionalContext": context_msg,
         },
-        "systemMessage": f"RECHECKER: Review done. Run: bash .rechecker/merge-worktrees.sh",
+        "systemMessage": "RECHECKER: Review done. Run: bash .rechecker/merge-worktrees.sh",
     }
     print(json.dumps(output))
 
