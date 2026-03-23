@@ -246,6 +246,20 @@ def main() -> None:
             result = subprocess.run(cmd, cwd=root, stdout=subprocess.DEVNULL, stderr=stderr_f)
         _log(f"  claude exit code: {result.returncode}")
 
+        # Parse token usage from stderr log
+        token_summary = ""
+        try:
+            stderr_content = stderr_log.read_text(errors="replace")
+            # Claude CLI outputs lines like "Total cost: $X.XX" and "Total tokens: NNN in / NNN out"
+            for line in stderr_content.splitlines():
+                line_lower = line.lower().strip()
+                if "total cost" in line_lower or "total token" in line_lower or "input token" in line_lower or "output token" in line_lower:
+                    token_summary += line.strip() + "\n"
+        except OSError:
+            pass
+        if token_summary:
+            _log(f"  token usage:\n{token_summary.strip()}")
+
         # Copy report from worktree to reports_dev/
         # The final report can be in multiple locations depending on where
         # the orchestrator wrote it or if it was interrupted:
@@ -281,6 +295,8 @@ def main() -> None:
             "uid": uid,
             "report": report_path,
             "exit_code": str(result.returncode),
+            "tokens": token_summary.strip(),
+            "stderr_log": str(stderr_log),
         })
 
     # Write rck-*-merge-pending.md in each repo root for Claude to see
@@ -349,6 +365,10 @@ def main() -> None:
             context_lines.append(f"  - Branch `{r['branch']}` has fixes. Report: `{r['report']}`")
         else:
             context_lines.append(f"  - Branch `{r['branch']}`: code was clean, no fixes needed.")
+        if r.get("tokens"):
+            context_lines.append(f"    Token usage: {r['tokens']}")
+        if r.get("stderr_log"):
+            context_lines.append(f"    Full log: `{r['stderr_log']}`")
     context_lines.append("")
 
     if has_fixes:

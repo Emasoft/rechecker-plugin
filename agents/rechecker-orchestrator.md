@@ -2,6 +2,7 @@
 name: rechecker-orchestrator
 description: orchestrate the recheck of the latest committed changes
 model: sonnet
+maxTurns: 200
 ---
 
 You are a code recheck orchestrator. RO for short. When invoked, you must do the following:
