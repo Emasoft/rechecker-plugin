@@ -36,9 +36,13 @@ REPORTS_DIR = RECHECKER_DIR / "reports"
 INDEX_FILE = RECHECKER_DIR / "index.json"
 PROGRESS_FILE = RECHECKER_DIR / "rck-progress.json"
 
-# File size thresholds for big vs small classification
+# File size thresholds for grouping (big = one per agent group, small = batched)
 BIG_FILE_LINES = 200
 BIG_FILE_BYTES = 10_000
+
+# Files above this threshold are routed to big-files-auditor (opus single-pass)
+# instead of the normal LLM Externalizer review loop
+HUGE_FILE_LINES = 5000
 
 # Group size limits
 MAX_BIG_PER_GROUP = 3
@@ -276,7 +280,8 @@ def cmd_init(args: argparse.Namespace) -> None:
         p = Path(path_str)
         lines = _count_lines(p)
         size = _file_size(p)
-        category = "big" if lines > BIG_FILE_LINES or size > BIG_FILE_BYTES else "small"
+        huge = lines > HUGE_FILE_LINES
+        category = "huge" if huge else ("big" if lines > BIG_FILE_LINES or size > BIG_FILE_BYTES else "small")
         files[fid] = {
             "path": path_str,
             "lines": lines,
@@ -284,8 +289,10 @@ def cmd_init(args: argparse.Namespace) -> None:
             "category": category,
         }
 
-    # Split into macro-groups if >200 files
-    fid_list = list(files.keys())
+    # Huge files go to big-files-auditor, not through the normal pipeline groups
+    huge_fids = [fid for fid, info in files.items() if info["category"] == "huge"]
+    # Only group non-huge files
+    fid_list = [fid for fid in files if files[fid]["category"] != "huge"]
     macro_groups: dict[str, list[str]] = {}  # macro_id -> list of group IDs
     all_groups: dict[str, list[str]] = {}  # group_id -> list of FIDs
 
@@ -318,14 +325,20 @@ def cmd_init(args: argparse.Namespace) -> None:
         "files": files,
         "groups": all_groups,
         "macro_groups": macro_groups,
+        "huge_fids": huge_fids,
     }
     _save_index(index)
 
     # Print summary
+    huge_count = len(huge_fids)
     big_count = sum(1 for f in files.values() if f["category"] == "big")
     small_count = sum(1 for f in files.values() if f["category"] == "small")
     print(f"Initialized: {len(files)} files, {len(all_groups)} groups, {len(macro_groups)} macro-group(s)")
-    print(f"  Big: {big_count}, Small: {small_count}")
+    print(f"  Huge (>5000 lines, BFA): {huge_count}, Big: {big_count}, Small: {small_count}")
+    if huge_fids:
+        for fid in huge_fids:
+            info = files[fid]
+            print(f"    {fid}: {info['path']} ({info['lines']} lines) -> big-files-auditor")
     for mg_key, mg_gids in macro_groups.items():
         file_count = sum(len(all_groups[g]) for g in mg_gids)
         print(f"  {mg_key}: {len(mg_gids)} groups, {file_count} files")

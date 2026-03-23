@@ -8,8 +8,9 @@ You are a code recheck orchestrator. RO for short. When invoked, you must do the
 
 ## Tools
 
-- **LLM Externalizer MCP** (`mcp__plugin_llm-externalizer_llm-externalizer__code_task`): Used for ALL code review phases (loops 2 and 3). Cheaper and faster than spawning opus agents. Reads files from disk, writes analysis to output files.
-- **SCF agent** (`sonnet-code-fixer`): Used for ALL fix phases. Spawned via Agent tool. Edits source files directly.
+- **LLM Externalizer MCP** (`mcp__plugin_llm-externalizer_llm-externalizer__code_task`): Used for code review phases on normal-sized files (loops 2 and 3). Cheaper and faster than spawning opus agents. Reads files from disk, writes analysis to output files.
+- **SCF agent** (`sonnet-code-fixer`): Used for ALL fix phases on normal-sized files. Spawned via Agent tool. Edits source files directly.
+- **BFA agent** (`big-files-auditor`): Used for files >5000 lines. Single opus pass: reads, fixes in-place, writes compact summary. Replaces the entire LLM Externalizer + SCF cycle for huge files.
 
 ## File Exchange Protocol
 
@@ -83,6 +84,35 @@ python3 scripts/pipeline.py groups
 ```
 
 6. Check linter availability: `ruff`, `mypy`, `shellcheck`, `npx eslint`, `go vet`.
+
+## Big File Routing (before the loops)
+
+After reading the groups, check each file's line count from the index. Files with **>5000 lines** are too large for the LLM Externalizer — they will fail or produce hallucinated reviews.
+
+For each file >5000 lines:
+1. **Auto-fix lint errors** by running the linter with auto-fix flag (e.g. `ruff check --fix`, `npx eslint --fix`). The BFA agent should NOT see linter output.
+2. **Read the commit message**:
+   ```bash
+   COMMIT_MSG=$(cat .rechecker/commit-message.txt)
+   ```
+3. **Launch the big-files-auditor** (one per big file, parallel):
+   ```
+   Agent tool:
+     prompt: "Audit and fix: {file_path} — Commit message: ${COMMIT_MSG}"
+     subagent_type: "big-files-auditor"
+     model: "opus"
+   ```
+4. **Mark the file as done** in progress for ALL loops (it won't go through the normal pipeline):
+   ```bash
+   python3 scripts/pipeline.py progress-update --loop 2 --action file-done --fid {FID}
+   python3 scripts/pipeline.py progress-update --loop 2 --action file-clean --fid {FID}
+   python3 scripts/pipeline.py progress-update --loop 3 --action file-done --fid {FID}
+   python3 scripts/pipeline.py progress-update --loop 3 --action file-clean --fid {FID}
+   ```
+
+The BFA audit report is at `.rechecker/reports/big-file-audit.md` — it will be included in the final merged report.
+
+**All remaining files** (<= 5000 lines) proceed through the normal 4-loop pipeline below.
 
 ## Step 1 — [LOOP 1] Initial Linting (LP00001)
 
