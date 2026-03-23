@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Switch file filter from allowlist to blocklist approach
+## [2.1.13] - 2026-03-23
+
 ### Bug Fixes
 
 - Remove duplicate entries in CHANGELOG
@@ -11,6 +16,10 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 - Filter files to only recheck source code and critical configs
+
+### Miscellaneous Tasks
+
+- Bump version to 2.1.13
 
 ### Rechecker
 
