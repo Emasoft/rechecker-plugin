@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Ultra-safe merge script with lock, rollback, and full verification
+## [2.2.0] - 2026-03-23
+
 ### Bug Fixes
 
 - Major safety overhaul of merge script and fixer agent
+
+### Miscellaneous Tasks
+
+- Bump version to 2.2.0
 ## [2.1.19] - 2026-03-23
 
 ### Bug Fixes
