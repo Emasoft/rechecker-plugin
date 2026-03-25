@@ -1,68 +1,100 @@
 ---
 name: recheck
-description: recheck the last committed changes
-model: sonnet
+description: Review and fix the last committed code changes
 ---
 
-Use this skill to trigger a full automated code review of the latest committed changes.
+Automated code review and fix pipeline for the latest commit. Runs inline (no worktrees), blocking.
 
-The pipeline uses a sonnet orchestrator in a named worktree:
-- **RO** (rechecker-orchestrator): Sonnet orchestrator — runs all loops, makes 1 commit
-- **LLM Externalizer**: External LLM (grok/gemini via OpenRouter) — reviews code for bugs, intent, and vulnerabilities
-- **SCF** (sonnet-code-fixer): Sonnet swarm worker — applies fixes
+## Recursion guard
 
-**This skill runs synchronously.** You are responsible for merging the worktree branch after completion.
+Before doing anything, check if the latest commit is already a rechecker commit:
+```bash
+git log -1 --format=%s | grep -q '\[rechecker: skip\]' && echo "SKIP" || echo "PROCEED"
+```
+If it prints `SKIP`, stop immediately — this commit was made by the rechecker itself.
 
-## Checklist
+## Step 1: Identify changed files
 
-Copy and use this checklist to track progress:
+```bash
+git show --name-only --format= --diff-filter=d HEAD
+```
 
-- [ ] **Pre-check: verify git repo**:
-  ```bash
-  git rev-parse --show-toplevel
-  ```
-  If it fails, tell the user "Not in a git repository — rechecker requires git" and STOP.
-- [ ] **Generate the worktree name**:
-  ```bash
-  RCK_UID=$(head -c3 /dev/urandom | xxd -p | head -c6)
-  RCK_WT="rck-${RCK_UID}"
-  echo "$RCK_WT"
-  ```
-- [ ] **Deploy the merge script** to `.rechecker/`:
-  ```bash
-  cd "$(git rev-parse --show-toplevel)" && mkdir -p .rechecker && cp "${CLAUDE_PLUGIN_ROOT}/scripts/merge-worktrees.sh" .rechecker/merge-worktrees.sh && chmod +x .rechecker/merge-worktrees.sh
-  ```
-- [ ] **Ensure TLDR artifacts are gitignored**:
-  ```bash
-  cd "$(git rev-parse --show-toplevel)" && for p in ".tldr/" ".tldrignore" ".tldr_session_*"; do grep -qxF "$p" .gitignore 2>/dev/null || echo "$p" >> .gitignore; done
-  ```
-- [ ] Identify the latest commit SHA and changed files:
-  ```bash
-  cd "$(git rev-parse --show-toplevel)" && git log -1 --format=%H && git show --name-only --format= --diff-filter=d HEAD
-  ```
-- [ ] **Launch the orchestrator in a worktree**:
-  ```bash
-  cd "$(git rev-parse --show-toplevel)" && claude --worktree "$RCK_WT" \
-    --agent "rechecker-plugin:rechecker-orchestrator" \
-    --dangerously-skip-permissions \
-    -p "Run the full recheck pipeline on the latest commit."
-  ```
-  Wait for it to complete.
-- [ ] **Copy the report** from the worktree before merging (merge removes the worktree):
-  ```bash
-  cd "$(git rev-parse --show-toplevel)" && mkdir -p reports_dev && \
-    cp ".claude/worktrees/$RCK_WT"/rck-*-report.md reports_dev/ 2>/dev/null; \
-    cp ".claude/worktrees/$RCK_WT"/reports_dev/rck-*-report.md reports_dev/ 2>/dev/null; true
-  ```
-- [ ] **Merge the worktree branch** using the merge script:
-  ```bash
-  cd "$(git rev-parse --show-toplevel)" && bash .rechecker/merge-worktrees.sh
-  ```
-  The script handles: ancestry check, merge with `-X theirs`, move reports to `docs_dev/`, delete branches, clean up.
-- [ ] **Read the report** and tell the user what was found and fixed:
-  ```bash
-  ls -t reports_dev/rck-*-report.md | head -1
-  ```
-  Read that file and summarize the findings for the user.
+Filter out non-code files. Skip files matching these patterns:
+- Media: `*.png, *.jpg, *.jpeg, *.gif, *.svg, *.ico, *.mp3, *.mp4, *.webm, *.webp, *.avif, *.bmp, *.tiff, *.pdf, *.eps, *.ai`
+- Data/config: `*.csv, *.tsv, *.parquet, *.sqlite, *.db, *.lock, *.lockb`
+- Generated: `CHANGELOG.md, LICENSE, *.min.js, *.min.css, *.map, *.bundle.js, *.chunk.js`
+- Docs: `*.md` (except README.md)
+- Binary: `*.whl, *.tar.gz, *.zip, *.egg, *.so, *.dylib, *.dll, *.exe, *.bin`
+- Fonts: `*.woff, *.woff2, *.ttf, *.otf, *.eot`
 
-Do not consider the task done until all checkpoints above have been completed.
+Also skip files larger than 500KB:
+```bash
+wc -c < <file>
+```
+
+If no code files remain after filtering, stop — nothing to review.
+
+## Step 2: Review with LLM Externalizer
+
+For each code file (or batched together if small), use `mcp__plugin_llm-externalizer_llm-externalizer__code_task` to review:
+
+**Instructions** (pass as `instructions` parameter):
+```
+Review this code file for bugs, security vulnerabilities, logic errors, and correctness issues.
+
+For each issue found, report:
+### BUG: <short title>
+- **File**: <filename>
+- **Line**: <line number or range>
+- **Severity**: critical / high / medium / low
+- **Description**: What is wrong
+- **Fix**: What should be changed
+
+CRITICAL RULES — violations break the build:
+- NEVER suggest removing code you think is "unused" — it may be used by other files
+- NEVER suggest removing variables, imports, functions, or classes unless they cause an error
+- NEVER suggest style-only changes (formatting, naming, reordering)
+- Only report actual bugs, security holes, or logic errors
+- If the code is correct, say "No issues found"
+```
+
+Pass the file path via `input_files_paths`. Set `ensemble: true` for thorough review.
+
+Read the output file to get the review results.
+
+## Step 3: Fix issues (if any)
+
+If issues were found, use the `rechecker-plugin:sonnet-code-fixer` agent to fix them.
+
+For each file with issues, spawn one fixer agent:
+- Pass the file path and the specific issues from the review
+- Tell the fixer: "Fix ONLY these reported issues. Do NOT delete any code. Do NOT make style changes."
+
+Use Serena MCP (`find_symbol`, `replace_symbol_body`) and TLDR for surgical edits.
+
+If no issues were found in any file, skip to the summary step.
+
+## Step 4: Commit fixes (recursion-safe)
+
+Stage ONLY the files that were fixed (not `git add -A`):
+```bash
+git add <file1> <file2> ...
+```
+
+Commit with the rechecker skip marker so the hook does not trigger another recheck:
+```bash
+git commit -m "$(cat <<'EOF'
+fix: apply rechecker fixes [rechecker: skip]
+
+Auto-reviewed and fixed by rechecker plugin.
+EOF
+)"
+```
+
+## Step 5: Summary
+
+Report to the user:
+- How many files were reviewed
+- How many issues were found (by severity)
+- What was fixed
+- Whether a commit was made

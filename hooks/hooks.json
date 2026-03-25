@@ -1,5 +1,5 @@
 {
-  "description": "Rechecker: automated code review after git commits, with resume support and error logging",
+  "description": "Rechecker: prompts Claude to review code after git commits",
   "hooks": {
     "PostToolUse": [
       {
@@ -7,21 +7,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/rechecker.py",
-            "timeout": 14400,
-            "async": true
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "matcher": "resume",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/resume-check.py",
-            "timeout": 30
+            "command": "echo '{\"systemMessage\":\"If files were committed, run /recheck to review and fix them.\"}'",
+            "timeout": 5
           }
         ]
       }

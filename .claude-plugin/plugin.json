@@ -1,7 +1,7 @@
 {
   "name": "rechecker-plugin",
-  "version": "2.2.16",
-  "description": "Automatically reviews and fixes Claude's code changes using a separate Claude instance in a git worktree after commits",
+  "version": "3.0.0",
+  "description": "Prompts Claude to review and fix code after git commits using a blocking /recheck skill",
   "author": {
     "name": "Emasoft",
     "url": "https://github.com/Emasoft"
