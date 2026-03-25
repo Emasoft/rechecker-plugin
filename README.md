@@ -2,7 +2,7 @@
 
 <!--BADGES-START-->
 [![CI](https://github.com/Emasoft/rechecker-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/Emasoft/rechecker-plugin/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-2.2.13-blue)](https://github.com/Emasoft/rechecker-plugin)
+[![Version](https://img.shields.io/badge/version-2.2.14-blue)](https://github.com/Emasoft/rechecker-plugin)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Validation](https://github.com/Emasoft/rechecker-plugin/actions/workflows/validate.yml/badge.svg)](https://github.com/Emasoft/rechecker-plugin/actions/workflows/validate.yml)
 <!--BADGES-END-->

@@ -6,7 +6,24 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Commit batching — accumulate files, trigger at threshold
+
+### Miscellaneous Tasks
+
+- Gitignore .serena/ config directory
+
+### Testing
+
+- Add 4KB sample script to measure rechecker token consumption
+## [2.2.13] - 2026-03-25
+
+### Features
+
 - Accurate token counting + fix wrong-commit bug
+
+### Miscellaneous Tasks
+
+- Bump version to 2.2.13
 
 ### Testing
 
