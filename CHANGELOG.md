@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Track all Serena files (index, config) for worktree propagation
+
+### Features
+
+- Instruct all agents to use Serena MCP and TLDR for surgical edits
+## [2.2.14] - 2026-03-25
+
 ### Features
 
 - Commit batching — accumulate files, trigger at threshold
@@ -11,6 +20,7 @@ All notable changes to this project will be documented in this file.
 ### Miscellaneous Tasks
 
 - Gitignore .serena/ config directory
+- Bump version to 2.2.14
 
 ### Testing
 
