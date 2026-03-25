@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# merge-worktrees.sh — Ultra-safe merge of rechecker worktree branches
+# merge-worktrees.sh — Ultra-safe merge or discard of rechecker worktree branches
 #
 # Standalone script. Only requires: git, bash. No Claude Code dependency.
 # Run from any git repo where the rechecker plugin created worktrees.
 #
 # Usage:
 #   bash merge-worktrees.sh [--dry-run] [--no-cleanup]
+#   bash merge-worktrees.sh --discard [name1 name2 ...]
+#   bash merge-worktrees.sh --discard-all
 
 # Disable set -e to prevent trap storms; we handle errors explicitly
 set -uo pipefail
@@ -24,7 +26,6 @@ MERGE_IN_PROGRESS=false
 
 release_lock() {
   if [[ -n "$LOCKFILE" ]] && [[ -f "$LOCKFILE" ]]; then
-    # Only remove if we own it
     local lock_pid
     lock_pid=$(cat "$LOCKFILE" 2>/dev/null || echo "")
     if [[ "$lock_pid" == "$$" ]]; then
@@ -33,37 +34,28 @@ release_lock() {
   fi
 }
 
-# Trap: restore state on interrupt (Ctrl+C, kill)
 cleanup_on_signal() {
   echo ""
   echo "=== INTERRUPTED ==="
-
-  # Abort any in-progress merge
   if $MERGE_IN_PROGRESS; then
     echo "  Aborting in-progress merge..."
     git merge --abort 2>/dev/null || true
   fi
-
-  # Restore branch if changed
   local current
   current=$(git branch --show-current 2>/dev/null || echo "")
   if [[ -n "$ORIGINAL_BRANCH" ]] && [[ "$current" != "$ORIGINAL_BRANCH" ]]; then
     echo "  Restoring branch $ORIGINAL_BRANCH..."
     git checkout "$ORIGINAL_BRANCH" 2>/dev/null || true
   fi
-
-  # Restore stash if we stashed
   if $STASHED; then
     echo "  Restoring stashed changes..."
     git stash pop 2>/dev/null || echo "  Stash pop failed — check 'git stash list'"
   fi
-
   release_lock
   exit 130
 }
 trap cleanup_on_signal INT TERM
 
-# Verify we're still on the expected branch
 assert_branch() {
   local expected_branch="$1"
   local context="$2"
@@ -74,10 +66,8 @@ assert_branch() {
   fi
 }
 
-# Sanitize a branch name: only allow safe characters
 sanitize_branch() {
   local name="$1"
-  # Git branch names: alphanumeric, dash, dot, slash, underscore
   if [[ ! "$name" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
     warn "Branch name contains unsafe characters: $name"
     return 1
@@ -85,24 +75,18 @@ sanitize_branch() {
   return 0
 }
 
-# Acquire a lock to prevent concurrent git operations
 acquire_lock() {
   local git_dir
   git_dir=$(git rev-parse --git-dir 2>/dev/null) || die "Cannot find .git directory"
   LOCKFILE="$git_dir/rechecker-merge.lock"
-
-  # Check for git's own lock
   if [[ -f "$git_dir/index.lock" ]]; then
     die "Git index is locked ($git_dir/index.lock). Another git process is running."
   fi
-
-  # Atomic lock acquisition via mkdir (more portable than noclobber, truly atomic on all filesystems)
   local lockdir="$git_dir/rechecker-merge.lk"
   if mkdir "$lockdir" 2>/dev/null; then
     echo "$$" > "$LOCKFILE"
     rmdir "$lockdir" 2>/dev/null
   else
-    # Lock exists — check if stale
     local other_pid
     other_pid=$(cat "$LOCKFILE" 2>/dev/null || echo "unknown")
     if [[ "$other_pid" =~ ^[0-9]+$ ]] && kill -0 "$other_pid" 2>/dev/null; then
@@ -117,9 +101,63 @@ acquire_lock() {
   fi
 }
 
+# Remove a worktree directory and its branch safely
+remove_worktree_and_branch() {
+  local branch="$1"
+  local removed_wt=false
+  local removed_br=false
+
+  # Sanitize
+  if ! sanitize_branch "$branch"; then
+    warn "Skipping unsafe branch name: $branch"
+    return 1
+  fi
+
+  # Verify branch exists
+  if ! git rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
+    warn "Branch $branch does not exist — skipping"
+    return 1
+  fi
+
+  # Find the worktree path for this branch
+  local wt_path=""
+  local _current_wt=""
+  while IFS= read -r line; do
+    if [[ "$line" == "worktree "* ]]; then
+      _current_wt="${line#worktree }"
+    elif [[ "$line" == "branch refs/heads/$branch" ]]; then
+      wt_path="$_current_wt"
+    elif [[ -z "$line" ]]; then
+      _current_wt=""
+    fi
+  done < <(git worktree list --porcelain 2>/dev/null)
+
+  # Remove worktree if found
+  if [[ -n "$wt_path" ]] && [[ -d "$wt_path" ]]; then
+    # Check no process is using it
+    if pgrep -f "$wt_path" >/dev/null 2>&1; then
+      warn "Worktree $wt_path has an active process — skipping"
+      return 1
+    fi
+    git worktree remove "$wt_path" --force 2>/dev/null && removed_wt=true || warn "Failed to remove worktree: $wt_path"
+  fi
+
+  # Delete branch (safe -D since we're discarding, not merging)
+  if git branch -D "$branch" 2>/dev/null; then
+    removed_br=true
+  else
+    warn "Failed to delete branch: $branch"
+  fi
+
+  if $removed_wt || $removed_br; then
+    info "Discarded: $branch"
+    return 0
+  fi
+  return 1
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────
 
-# Must be in a git repo
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "Not inside a git repository."
 
 GIT_ROOT=$(git rev-parse --show-toplevel) || die "Cannot determine git root"
@@ -127,21 +165,41 @@ cd "$GIT_ROOT" || die "Cannot cd to git root: $GIT_ROOT"
 
 DRY_RUN=false
 NO_CLEANUP=false
+DISCARD_MODE=false
+DISCARD_ALL=false
+DISCARD_NAMES=()
 
-for arg in "$@"; do
-  case "$arg" in
+# Parse arguments — need to handle --discard with optional names
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --dry-run) DRY_RUN=true ;;
     --no-cleanup) NO_CLEANUP=true ;;
+    --discard-all) DISCARD_MODE=true; DISCARD_ALL=true ;;
+    --discard) DISCARD_MODE=true ;;
     -h|--help)
       cat <<'HELP'
 Usage: merge-worktrees.sh [options]
 
 Ultra-safe merge of rechecker worktree branches into the current branch.
 
+Modes:
+  (default)       Merge rechecker branches with ancestry check and safety verification
+  --discard-all   Remove ALL rechecker worktrees and branches without merging
+  --discard N...  Remove specific worktrees/branches by name (partial match)
+
 Options:
-  --dry-run     Preview what would be merged without doing anything
-  --no-cleanup  Merge branches but skip cleanup (keep branches, files)
-  --help, -h    Show this help
+  --dry-run       Preview what would happen without doing anything
+  --no-cleanup    Merge branches but skip cleanup (keep branches, files)
+  --help, -h      Show this help
+
+Examples:
+  bash merge-worktrees.sh                          # merge all safe branches
+  bash merge-worktrees.sh --dry-run                # preview what would merge
+  bash merge-worktrees.sh --discard-all            # discard all without merging
+  bash merge-worktrees.sh --discard rck-abc123     # discard one by name
+  bash merge-worktrees.sh --discard abc123 def456  # discard multiple (partial match)
+  bash merge-worktrees.sh --discard-all --dry-run  # preview what would be discarded
 
 Safety:
   - Atomic lock prevents concurrent operations
@@ -149,12 +207,20 @@ Safety:
   - Branch integrity verified after every operation
   - Automatic rollback on interrupt
   - Uses -X theirs (prefers rechecker fixes on conflict)
-  - Safe -d branch delete (refuses if not fully merged)
+  - Discard checks for active processes before removing worktrees
 HELP
       exit 0
       ;;
-    *) die "Unknown option: $arg (try --help)" ;;
+    *)
+      if $DISCARD_MODE && ! $DISCARD_ALL; then
+        # Arguments after --discard are names to discard
+        DISCARD_NAMES+=("$1")
+      else
+        die "Unknown option: $1 (try --help)"
+      fi
+      ;;
   esac
+  shift
 done
 
 # ── Pre-flight checks ────────────────────────────────────────────────────
@@ -167,19 +233,119 @@ echo "Git root: $GIT_ROOT"
 echo "Branch:   $ORIGINAL_BRANCH"
 echo "HEAD:     $ORIGINAL_HEAD"
 
-# Verify git is functional
 git status --porcelain --ignore-submodules >/dev/null 2>&1 || die "git status failed — repository may be corrupted"
 
 # Find all rechecker worktree branches
 ALL_BRANCHES=$(git branch --list 'worktree-rck-*' 'worktree-rechecker-*' | sed 's/^[+* ]*//' || true)
 
 if [[ -z "$ALL_BRANCHES" ]]; then
-  echo "No rechecker worktree branches found. Nothing to merge."
+  echo "No rechecker worktree branches found. Nothing to do."
   exit 0
 fi
 
 TOTAL_FOUND=$(echo "$ALL_BRANCHES" | wc -l | tr -d ' ')
 echo "Found $TOTAL_FOUND rechecker branch(es) total"
+
+# ══════════════════════════════════════════════════════════════════════════
+# DISCARD MODE
+# ══════════════════════════════════════════════════════════════════════════
+
+if $DISCARD_MODE; then
+  echo ""
+  echo "=== DISCARD MODE ==="
+
+  # Build the list of branches to discard
+  DISCARD_BRANCHES=""
+  if $DISCARD_ALL; then
+    DISCARD_BRANCHES="$ALL_BRANCHES"
+    echo "Discarding ALL $TOTAL_FOUND rechecker branch(es)."
+  else
+    if [[ ${#DISCARD_NAMES[@]} -eq 0 ]]; then
+      die "No names specified. Use --discard-all to discard everything, or --discard <name1> <name2> ..."
+    fi
+    # Match names (partial match: "abc123" matches "worktree-rck-abc123")
+    for name in "${DISCARD_NAMES[@]}"; do
+      matched=false
+      while IFS= read -r branch; do
+        [[ -z "$branch" ]] && continue
+        if [[ "$branch" == *"$name"* ]]; then
+          DISCARD_BRANCHES="${DISCARD_BRANCHES}${branch}"$'\n'
+          matched=true
+        fi
+      done <<< "$ALL_BRANCHES"
+      if ! $matched; then
+        warn "No branch matching '$name' found"
+      fi
+    done
+    DISCARD_BRANCHES=$(echo "$DISCARD_BRANCHES" | sed '/^$/d' | sort -u)
+  fi
+
+  if [[ -z "$DISCARD_BRANCHES" ]]; then
+    echo "No branches to discard."
+    exit 0
+  fi
+
+  DISCARD_COUNT=$(echo "$DISCARD_BRANCHES" | wc -l | tr -d ' ')
+  echo ""
+  echo "Branches to discard ($DISCARD_COUNT):"
+  while IFS= read -r branch; do
+    [[ -z "$branch" ]] && continue
+    commit=$(git log --oneline -1 "$branch" 2>/dev/null || echo "???")
+    info "$branch  ($commit)"
+  done <<< "$DISCARD_BRANCHES"
+
+  if $DRY_RUN; then
+    echo ""
+    echo "[DRY RUN] Would discard the above branches. Run without --dry-run to proceed."
+    exit 0
+  fi
+
+  # Acquire lock
+  acquire_lock
+  info "Lock acquired (PID $$)"
+
+  # Verify branch before starting
+  assert_branch "$ORIGINAL_BRANCH" "pre-discard check"
+
+  # Discard each branch
+  DISCARDED=0
+  FAILED=0
+  echo ""
+  while IFS= read -r branch; do
+    [[ -z "$branch" ]] && continue
+    if remove_worktree_and_branch "$branch"; then
+      DISCARDED=$((DISCARDED + 1))
+    else
+      FAILED=$((FAILED + 1))
+    fi
+  done <<< "$DISCARD_BRANCHES"
+
+  git worktree prune 2>/dev/null || true
+
+  # Clean up merge-pending files for discarded branches
+  DOCS_DEV="$GIT_ROOT/docs_dev"
+  mkdir -p "$DOCS_DEV"
+  for pattern in "rck-*-merge-pending.md" "rck-*-report.md"; do
+    for f in $pattern; do
+      [[ -f "$f" ]] && mv "$f" "$DOCS_DEV/" 2>/dev/null || true
+    done
+  done
+
+  # Verify branch is intact
+  assert_branch "$ORIGINAL_BRANCH" "post-discard check"
+
+  release_lock
+
+  echo ""
+  echo "=== Done ==="
+  echo "  Discarded: $DISCARDED"
+  echo "  Failed:    $FAILED"
+  exit 0
+fi
+
+# ══════════════════════════════════════════════════════════════════════════
+# MERGE MODE (default)
+# ══════════════════════════════════════════════════════════════════════════
 
 # ── Step 0: Acquire lock ─────────────────────────────────────────────────
 
@@ -193,7 +359,6 @@ fi
 echo ""
 echo "Step 1: Removing worktrees..."
 
-# Collect worktree paths (process substitution, not pipe — avoids subshell)
 WT_PATHS=()
 _wt_path=""
 while IFS= read -r line; do
@@ -203,9 +368,9 @@ while IFS= read -r line; do
     if [[ -n "$_wt_path" ]] && [[ -d "$_wt_path" ]]; then
       WT_PATHS+=("$_wt_path")
     fi
-    _wt_path=""  # Reset to prevent reuse on malformed input
+    _wt_path=""
   elif [[ -z "$line" ]]; then
-    _wt_path=""  # Reset on empty line (worktree separator)
+    _wt_path=""
   fi
 done < <(git worktree list --porcelain 2>/dev/null)
 
@@ -218,7 +383,6 @@ else
     done
   else
     for wt_path in "${WT_PATHS[@]}"; do
-      # Check if a Claude process is running inside this worktree
       if pgrep -f "$wt_path" >/dev/null 2>&1; then
         warn "Worktree $wt_path has an active process — skipping"
         continue
@@ -229,7 +393,6 @@ else
   fi
 fi
 
-# Verify branch integrity after worktree operations
 assert_branch "$ORIGINAL_BRANCH" "worktree removal"
 
 # ── Step 2: Filter branches by ancestry ──────────────────────────────────
@@ -243,20 +406,17 @@ SKIPPED_ANCESTRY=0
 while IFS= read -r branch; do
   [[ -z "$branch" ]] && continue
 
-  # Sanitize branch name
   if ! sanitize_branch "$branch"; then
     SKIPPED_ANCESTRY=$((SKIPPED_ANCESTRY + 1))
     continue
   fi
 
-  # Verify the branch ref actually exists
   if ! git rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
     warn "Branch $branch does not exist — skipping"
     SKIPPED_ANCESTRY=$((SKIPPED_ANCESTRY + 1))
     continue
   fi
 
-  # Get the merge base
   merge_base=$(git merge-base "$ORIGINAL_BRANCH" "$branch" 2>/dev/null || echo "")
   if [[ -z "$merge_base" ]]; then
     info "SKIP $branch — no common ancestor with $ORIGINAL_BRANCH"
@@ -264,15 +424,12 @@ while IFS= read -r branch; do
     continue
   fi
 
-  # The merge base must be an ancestor of our current HEAD
   if ! git merge-base --is-ancestor "$merge_base" "$ORIGINAL_HEAD" 2>/dev/null; then
     info "SKIP $branch — based on a different branch"
     SKIPPED_ANCESTRY=$((SKIPPED_ANCESTRY + 1))
     continue
   fi
 
-  # The merge base must be recent — within 200 commits of HEAD.
-  # This prevents merging branches forked from ancient history.
   distance=$(git rev-list --count "$merge_base..$ORIGINAL_HEAD" 2>/dev/null || echo "999")
   if [[ "$distance" -gt 200 ]]; then
     info "SKIP $branch — base is $distance commits behind HEAD (too old)"
@@ -280,7 +437,6 @@ while IFS= read -r branch; do
     continue
   fi
 
-  # Check the branch actually has commits beyond the merge base
   branch_head=$(git rev-parse "$branch" 2>/dev/null || echo "")
   if [[ -z "$branch_head" ]] || [[ "$branch_head" == "$merge_base" ]]; then
     info "SKIP $branch — no commits beyond merge base"
@@ -338,7 +494,6 @@ else
   info "Working tree is clean"
 fi
 
-# Final pre-merge verification
 assert_branch "$ORIGINAL_BRANCH" "pre-merge check"
 
 # ── Step 4: Move existing rechecker files to docs_dev ────────────────────
@@ -348,7 +503,6 @@ mkdir -p "$DOCS_DEV" || die "Cannot create docs_dev directory"
 for pattern in "rck-*-merge-pending.md" "rck-*-report.md"; do
   for f in $pattern; do
     if [[ -f "$f" ]]; then
-      # Avoid overwriting: append timestamp if destination exists
       dest="$DOCS_DEV/$f"
       if [[ -f "$dest" ]]; then
         dest="$DOCS_DEV/$(date +%Y%m%d_%H%M%S)_$f"
@@ -371,19 +525,16 @@ MERGED_BRANCHES=""
 while IFS= read -r branch; do
   [[ -z "$branch" ]] && continue
 
-  # Pre-merge checks
   assert_branch "$ORIGINAL_BRANCH" "before merging $branch"
 
   echo -n "  $branch... "
 
-  # Verify branch still exists (could have been deleted between steps)
   if ! git rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
     echo "SKIP (branch disappeared)"
     SKIPPED=$((SKIPPED + 1))
     continue
   fi
 
-  # Check if branch has meaningful file changes
   diff_count=$(git diff --stat "$ORIGINAL_BRANCH...$branch" --ignore-submodules 2>/dev/null | wc -l | tr -d ' ')
   if [[ "$diff_count" -le 1 ]]; then
     echo "skip (no file changes)"
@@ -391,7 +542,6 @@ while IFS= read -r branch; do
     continue
   fi
 
-  # Check for git index lock before merge
   git_dir=$(git rev-parse --git-dir 2>/dev/null)
   if [[ -f "$git_dir/index.lock" ]]; then
     echo "SKIP (git index locked by another process)"
@@ -399,10 +549,8 @@ while IFS= read -r branch; do
     continue
   fi
 
-  # Save HEAD before merge for verification
   pre_merge_head=$(git rev-parse HEAD)
 
-  # Attempt merge with -X theirs (prefer rechecker's fixes on conflict)
   MERGE_IN_PROGRESS=true
   merge_output=$(git merge -X theirs "$branch" --no-edit 2>&1) && merge_ok=true || merge_ok=false
   MERGE_IN_PROGRESS=false
@@ -412,25 +560,20 @@ while IFS= read -r branch; do
     MERGED=$((MERGED + 1))
     MERGED_BRANCHES="${MERGED_BRANCHES}${branch}"$'\n'
 
-    # Post-merge verification: branch must still be correct
     assert_branch "$ORIGINAL_BRANCH" "after merging $branch"
 
-    # Verify original HEAD is ancestor of new HEAD
     if ! git merge-base --is-ancestor "$pre_merge_head" HEAD 2>/dev/null; then
       die "Merge of $branch corrupted history! Pre-merge HEAD is not ancestor of new HEAD."
     fi
-
   else
-    # Merge failed — abort cleanly
     git merge --abort 2>/dev/null || true
 
-    # Verify HEAD is back to pre-merge state
     post_abort_head=$(git rev-parse HEAD)
     if [[ "$post_abort_head" != "$pre_merge_head" ]]; then
       warn "HEAD changed after merge abort of $branch! Expected $pre_merge_head, got $post_abort_head"
       warn "Stopping. Manual intervention needed."
       FAILED=$((FAILED + 1))
-      break  # Stop processing more branches — state is uncertain
+      break
     fi
 
     echo "FAILED (aborted, no changes applied)"
@@ -477,7 +620,6 @@ if ! $NO_CLEANUP; then
   if [[ -n "$MERGED_BRANCHES" ]]; then
     while IFS= read -r branch; do
       [[ -z "$branch" ]] && continue
-      # Safe -d: git refuses if not fully merged
       if git branch -d "$branch" 2>/dev/null; then
         info "Deleted: $branch"
         DELETED=$((DELETED + 1))
@@ -522,7 +664,6 @@ else
   fi
 fi
 
-# Release lock
 release_lock
 
 # ── Summary ──────────────────────────────────────────────────────────────
