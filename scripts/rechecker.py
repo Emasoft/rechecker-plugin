@@ -197,13 +197,27 @@ def main() -> None:
     _flush_log(cwd)
 
     # Plugin-scoped agent reference — must match the agent name in agents/ directory
-orchestrator = "rechecker-plugin:rechecker-orchestrator"
+    orchestrator = "rechecker-plugin:rechecker-orchestrator"
 
     # Track results for all repos to build the final message
     results: list[dict[str, str]] = []
 
     # Resolve plugin root once (for copying bundled scripts)
     plugin_root = Path(os.environ.get("CLAUDE_PLUGIN_ROOT", "")) or Path(__file__).resolve().parent.parent
+
+    # Capture the HEAD SHA for each git root BEFORE launching worktrees.
+    # The worktree branches from HEAD, but HEAD may differ from the commit
+    # that triggered the hook. We pass the SHA explicitly to the orchestrator.
+    root_head_shas: dict[str, str] = {}
+    for root in git_roots:
+        try:
+            sha_result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=root, capture_output=True, text=True, timeout=5,
+            )
+            root_head_shas[root] = sha_result.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            root_head_shas[root] = "HEAD"
 
     for root in git_roots:
         # Ensure TLDR artifacts won't pollute worktree commits
@@ -233,7 +247,7 @@ orchestrator = "rechecker-plugin:rechecker-orchestrator"
             "claude", "--worktree", wt_name,
             "--agent", orchestrator,
             "--dangerously-skip-permissions",
-            "-p", "Run the full recheck pipeline on the latest commit.",
+            "-p", f"Run the full recheck pipeline on commit {root_head_shas[root]}.",
         ]
         _log(f"  worktree: {wt_name} (uid={uid})")
         _log(f"  cmd: {' '.join(cmd)}")
@@ -247,19 +261,31 @@ orchestrator = "rechecker-plugin:rechecker-orchestrator"
             result = subprocess.run(cmd, cwd=root, stdout=subprocess.DEVNULL, stderr=stderr_f)
         _log(f"  claude exit code: {result.returncode}")
 
-        # Parse token usage from stderr log
+        # Count tokens from JSONL transcripts (accurate, per-model breakdown)
         token_summary = ""
         try:
-            stderr_content = stderr_log.read_text(errors="replace")
-            # Claude CLI outputs lines like "Total cost: $X.XX" and "Total tokens: NNN in / NNN out"
-            for line in stderr_content.splitlines():
-                line_lower = line.lower().strip()
-                if "total cost" in line_lower or "total token" in line_lower or "input token" in line_lower or "output token" in line_lower:
-                    token_summary += line.strip() + "\n"
-        except OSError:
+            count_script = plugin_root / "scripts" / "count-tokens.py"
+            if count_script.is_file():
+                count_result = subprocess.run(
+                    ["python3", str(count_script), wt_name],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if count_result.returncode == 0:
+                    token_data = json.loads(count_result.stdout)
+                    s = token_data.get("summary", {})
+                    total_in = s.get("input_tokens", 0) + s.get("cache_read_tokens", 0) + s.get("cache_create_tokens", 0)
+                    total_out = s.get("output_tokens", 0)
+                    parts = [f"{total_in:,} in / {total_out:,} out"]
+                    for model, mc in token_data.get("by_model", {}).items():
+                        short_model = model.replace("claude-", "").replace("-4-6", "")
+                        m_in = mc.get("input_tokens", 0) + mc.get("cache_read_input_tokens", 0) + mc.get("cache_creation_input_tokens", 0)
+                        m_out = mc.get("output_tokens", 0)
+                        parts.append(f"{short_model}: {m_in:,}/{m_out:,}")
+                    token_summary = " · ".join(parts)
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
             pass
         if token_summary:
-            _log(f"  token usage:\n{token_summary.strip()}")
+            _log(f"  tokens: {token_summary}")
 
         # Copy report from worktree to reports_dev/
         # The final report can be in multiple locations depending on where

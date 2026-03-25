@@ -60,12 +60,19 @@ If `scripts/pipeline.py` is not found, look for it at `${CLAUDE_PLUGIN_ROOT}/scr
 for p in ".tldr/" ".tldrignore" ".tldr_session_*"; do grep -qxF "$p" .gitignore 2>/dev/null || echo "$p" >> .gitignore; done
 ```
 
-2. Extract UID and initialize:
+2. Extract UID and the target commit SHA:
 ```bash
 UID=$(git branch --show-current | sed 's/^worktree-rck-//')
 echo "UID=$UID"
-git show --name-only --format= --diff-filter=d HEAD > .rechecker/files.txt
-git log -1 --format=%s HEAD > .rechecker/commit-message.txt
+```
+
+The target commit SHA is provided in your launch prompt (e.g. "Run the full recheck pipeline on commit abc1234."). Extract it and use it instead of HEAD for all git commands:
+```bash
+# TARGET_SHA comes from the launch prompt — extract the 7+ char hex after "on commit "
+# If not found, fall back to HEAD
+TARGET_SHA="${TARGET_SHA:-HEAD}"
+git show --name-only --format= --diff-filter=d "$TARGET_SHA" > .rechecker/files.txt
+git log -1 --format=%s "$TARGET_SHA" > .rechecker/commit-message.txt
 mkdir -p .rechecker/reports
 ```
 
