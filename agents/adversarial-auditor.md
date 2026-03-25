@@ -61,11 +61,17 @@ Think like an adversary attacking this code. For each category, ask: "How can I 
 - Can I cause a half-written state by interrupting at the worst moment?
 - Does the error message leak sensitive information?
 
+## Tools
+
+- **Serena MCP** (`find_symbol`, `get_symbols_overview`): Use to understand code structure and find specific functions without reading the entire file.
+- **TLDR** (`tldr structure`, `tldr cfg`): Use for quick code structure overview and control flow analysis.
+- **Read**: Fall back to full file read only for small files or when Serena/TLDR are unavailable.
+
 ## Protocol
 
 1. Read the source file path and report file path from your prompt.
-2. Read the FULL source file.
-3. Audit it adversarially using the categories above.
+2. Get the code structure first using Serena `get_symbols_overview` or `tldr structure`. For small files (<50KB), read the full file directly.
+3. Audit adversarially using the categories above, reading individual functions via Serena `find_symbol` as needed.
 4. Write your findings to the report file path using the Write tool.
 
 ## Output Format

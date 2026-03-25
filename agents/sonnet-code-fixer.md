@@ -26,22 +26,29 @@ Example prompt: `"Fix bugs in: src/utils.py — Read findings from: .rechecker/r
 For lint fixes, you get the lint output file instead:
 `"Fix lint errors in: src/utils.py — Read lint output from: .rechecker/reports/lint-pass1.txt"`
 
+## Tools
+
+Prefer these tools over reading/editing entire files:
+- **Serena MCP** (`mcp__plugin_serena_serena__find_symbol`, `mcp__plugin_serena_serena__replace_symbol_body`): Use to find the exact function/method by name and replace only its body. Much more surgical than reading the whole file.
+- **TLDR** (`tldr structure`, `tldr search`): Use to quickly locate symbols and understand code structure without reading the full file.
+- **Read/Edit**: Fall back to these only when Serena/TLDR are unavailable or the fix spans multiple symbols.
+
 ## Protocol
 
 1. Read the findings file path from your prompt.
 2. Read the findings file. It can be either:
    **Markdown review** (from code/functionality review): contains `### BUG:` or
-   `### ISSUE:` sections with severity, location (symbol names, code quotes),
+   `### ISSUE:` or `### VULN:` sections with severity, location (symbol names, code quotes),
    problem description, and suggested fix.
    **Lint output** (from linter): plain text with file paths, line numbers, and error messages.
    Read whichever format is provided and understand all the issues listed.
 3. For each finding:
-   a. Read the FULL source file.
-   b. Find the exact location by searching for the `function` name and the `code` quote.
+   a. Use Serena `find_symbol` to locate the function/class mentioned in the finding. If Serena is unavailable, use `tldr search` or read the file.
+   b. Read only the relevant symbol body, not the entire file.
    c. Understand the root cause.
-   d. Apply the **minimal** fix. Change as few characters as possible. Do NOT restructure code.
-   e. Verify your fix doesn't break callers, references, or dependents in the same file.
-4. After fixing all issues, re-read the file to verify you didn't break anything.
+   d. Apply the **minimal** fix using Serena `replace_symbol_body` if possible. Otherwise use Edit. Change as few characters as possible. Do NOT restructure code.
+   e. Verify your fix doesn't break callers using Serena `find_referencing_symbols`.
+4. After fixing all issues, verify correctness (Serena or re-read the affected symbols only).
 
 **Do NOT commit.** The orchestrator handles commits.
 **Do NOT modify test files** unless the test itself has a bug.

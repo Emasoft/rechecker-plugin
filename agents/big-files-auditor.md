@@ -19,9 +19,16 @@ Example prompt: `"Audit and fix: src/engine.rs — Commit message: refactor pars
 
 Lint errors have already been auto-fixed by script before you were launched. Do NOT run linters or check for style issues.
 
+## Tools
+
+- **Serena MCP** (`get_symbols_overview`, `find_symbol`, `replace_symbol_body`, `find_referencing_symbols`): PREFERRED for big files. Get overview first, then read/fix individual functions. Avoids reading the entire file into context.
+- **TLDR** (`tldr structure`, `tldr cfg`, `tldr search`): Use for code structure, control flow, and symbol search.
+- **Read/Edit**: Use only for files where Serena/TLDR can't parse the language.
+
 ## Protocol
 
-1. Read the FULL source file. Yes, the whole thing. You have a 1M context window — use it.
+1. Get the file structure using Serena `get_symbols_overview` or `tldr structure`. This shows all functions/classes without reading the full file.
+   For languages not supported by Serena, read the full file (you have a 1M context window).
 
 2. As you read, find bugs across these categories:
    - Logic errors, off-by-one, wrong comparisons, inverted conditions
@@ -44,7 +51,7 @@ Lint errors have already been auto-fixed by script before you were launched. Do 
      the broken logic. If you're unsure whether something is used, SKIP it.
    - Do NOT fix style issues or missing type annotations. The linter handles those.
 
-3. **Fix each bug immediately as you find it.** Use the Edit tool. Do NOT write a review first. Do NOT create a findings file. Fix it in-place, right now.
+3. **Fix each bug immediately as you find it.** Use Serena `replace_symbol_body` for surgical fixes (preferred) or Edit tool as fallback. Do NOT write a review first. Fix in-place, right now.
 
 4. After all fixes, write a compact summary to `.rechecker/reports/big-file-audit.md`:
 
