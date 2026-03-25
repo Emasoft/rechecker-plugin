@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """rechecker.py - PostToolUse hook entry point.
 
-Detects git commit in Bash commands, finds the git root where each
-commit ran, launches claude --worktree --agent for each.
+Detects git commit in Bash commands, accumulates changed files across
+commits, and launches a recheck worktree when the batch threshold is met.
 Runs async (hooks.json "async": true).
 
-After all orchestrators finish, writes RECHECKER_MERGE_PENDING.md
-for the main Claude and outputs a systemMessage for the user.
+Batch threshold: >5 files OR >50KB total across accumulated commits.
+Below threshold, files are saved to pending-files.json for next commit.
 
-Naming convention for all files:
-  rck-{YYYYMMDD_HHMMSS}_{UUID6}-{purpose}.{ext}
-  e.g. rck-20260321_193000_a1b2c3-report.md
+After the orchestrator finishes, writes merge-pending.md for the main
+Claude and outputs additionalContext for the next conversation turn.
 """
 
 import json
@@ -19,12 +18,17 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 _LOG_LINES: list[str] = []
+
+# Batch thresholds — only trigger recheck when enough files accumulate
+BATCH_MIN_FILES = 5
+BATCH_MIN_BYTES = 50_000  # 50KB
 
 
 def _log(msg: str) -> None:
@@ -108,8 +112,7 @@ def _is_rechecker_worktree(cwd: str) -> bool:
         return False
 
 
-# Patterns that TLDR creates inside worktrees — must be gitignored to prevent
-# them from being committed by the rechecker's final `git add -A && git commit`.
+# Patterns that TLDR creates inside worktrees — must be gitignored
 _TLDR_GITIGNORE_PATTERNS = [".tldr/", ".tldrignore", ".tldr_session_*"]
 
 
@@ -130,6 +133,197 @@ def _ensure_tldr_gitignored(git_root: str) -> None:
         f.write("# TLDR artifacts (added by rechecker)\n")
         for pattern in missing:
             f.write(pattern + "\n")
+
+
+def _atomic_write_json(path: Path, data: Any) -> None:
+    """Write JSON atomically: write to temp file, then os.rename()."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp", prefix=".rck-")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.rename(tmp_path, str(path))
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _get_commit_files(git_root: str, sha: str) -> list[dict[str, Any]]:
+    """Get changed files from a commit with their sizes."""
+    try:
+        result = subprocess.run(
+            ["git", "show", "--name-only", "--format=", "--diff-filter=d", sha],
+            cwd=git_root, capture_output=True, text=True, timeout=10,
+        )
+        files = []
+        for line in result.stdout.strip().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            p = Path(git_root) / line
+            try:
+                size = p.stat().st_size
+            except OSError:
+                size = 0
+            files.append({"path": line, "bytes": size, "commit": sha})
+        return files
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return []
+
+
+def _load_pending(git_root: str) -> dict:  # type: ignore[type-arg]
+    """Load pending-files.json (accumulated files across commits)."""
+    pending_file = Path(git_root) / ".rechecker" / "pending-files.json"
+    if pending_file.exists():
+        try:
+            result: dict = json.loads(pending_file.read_text())  # type: ignore[type-arg]
+            return result
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {"files": [], "total_bytes": 0, "total_files": 0}
+
+
+def _save_pending(git_root: str, pending: dict) -> None:
+    """Save pending-files.json atomically."""
+    pending_file = Path(git_root) / ".rechecker" / "pending-files.json"
+    _atomic_write_json(pending_file, pending)
+
+
+def _clear_pending(git_root: str) -> None:
+    """Clear pending-files.json after successful recheck."""
+    pending_file = Path(git_root) / ".rechecker" / "pending-files.json"
+    if pending_file.exists():
+        pending_file.unlink()
+
+
+def _check_threshold(pending: dict) -> bool:  # type: ignore[type-arg]
+    """Check if accumulated files meet the batch threshold."""
+    total_files: int = pending["total_files"]
+    total_bytes: int = pending["total_bytes"]
+    return total_files >= BATCH_MIN_FILES or total_bytes >= BATCH_MIN_BYTES
+
+
+def _launch_recheck(root: str, pending: dict, plugin_root: Path) -> dict[str, str]:
+    """Launch a rechecker worktree for the accumulated batch."""
+    # Ensure TLDR artifacts are gitignored
+    _ensure_tldr_gitignored(root)
+
+    # Copy merge script
+    rechecker_dir = Path(root) / ".rechecker"
+    rechecker_dir.mkdir(parents=True, exist_ok=True)
+    merge_src = plugin_root / "scripts" / "merge-worktrees.sh"
+    merge_dst = rechecker_dir / "merge-worktrees.sh"
+    if merge_src.is_file():
+        shutil.copy2(str(merge_src), str(merge_dst))
+        merge_dst.chmod(0o755)
+
+    # Copy TLDR index if available (avoids reindexing in worktree)
+    tldr_src = Path(root) / ".tldr"
+    if tldr_src.is_dir():
+        _log("  .tldr/ index found — will be available in worktree via git")
+
+    # Write the batch file list so the orchestrator knows which files to review
+    files_list = sorted(set(f["path"] for f in pending["files"]))
+    batch_file = rechecker_dir / "batch-files.txt"
+    batch_file.write_text("\n".join(files_list) + "\n")
+    _log(f"  batch: {len(files_list)} files, {pending['total_bytes']} bytes")
+
+    # Get HEAD SHA
+    try:
+        sha_result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root, capture_output=True, text=True, timeout=5,
+        )
+        head_sha = sha_result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        head_sha = "HEAD"
+
+    # Generate worktree name
+    uid = uuid.uuid4().hex[:6]
+    wt_name = f"rck-{uid}"
+    branch_name = f"worktree-{wt_name}"
+
+    def _rck_name(purpose: str, ext: str) -> str:
+        now = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return f"rck-{now}_{uid}-{purpose}.{ext}"
+
+    # Plugin-scoped agent reference
+    orchestrator = "rechecker-plugin:rechecker-orchestrator"
+
+    cmd = [
+        "claude", "--worktree", wt_name,
+        "--agent", orchestrator,
+        "--dangerously-skip-permissions",
+        "-p", f"Run the full recheck pipeline on commit {head_sha}. "
+              f"Use .rechecker/batch-files.txt instead of git show for the file list.",
+    ]
+    _log(f"  worktree: {wt_name} (uid={uid})")
+    _log(f"  cmd: {' '.join(cmd)}")
+    _log(f"  cwd: {root}")
+    _flush_log(root)
+
+    reports_dev = Path(root) / "reports_dev"
+    reports_dev.mkdir(parents=True, exist_ok=True)
+    stderr_log = reports_dev / _rck_name("stderr", "log")
+    with open(stderr_log, "a") as stderr_f:
+        result = subprocess.run(cmd, cwd=root, stdout=subprocess.DEVNULL, stderr=stderr_f)
+    _log(f"  claude exit code: {result.returncode}")
+
+    # Count tokens from JSONL transcripts
+    token_summary = ""
+    try:
+        count_script = plugin_root / "scripts" / "count-tokens.py"
+        if count_script.is_file():
+            count_result = subprocess.run(
+                ["python3", str(count_script), wt_name],
+                capture_output=True, text=True, timeout=30,
+            )
+            if count_result.returncode == 0:
+                token_data = json.loads(count_result.stdout)
+                s = token_data.get("summary", {})
+                total_in = s.get("input_tokens", 0) + s.get("cache_read_tokens", 0) + s.get("cache_create_tokens", 0)
+                total_out = s.get("output_tokens", 0)
+                cost = s.get("estimated_cost_usd", 0)
+                token_summary = f"{total_in:,} in / {total_out:,} out (${cost:.2f})"
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+        pass
+    if token_summary:
+        _log(f"  tokens: {token_summary}")
+
+    # Copy report from worktree
+    wt_dir = Path(root) / ".claude" / "worktrees" / wt_name
+    report_path = ""
+    if wt_dir.is_dir():
+        search_dirs = [wt_dir, wt_dir / "reports_dev", wt_dir / ".rechecker" / "reports"]
+        for search_dir in search_dirs:
+            if report_path:
+                break
+            if not search_dir.is_dir():
+                continue
+            for report in sorted(search_dir.glob("rck-*-report.md"), reverse=True):
+                dest = reports_dev / _rck_name("report", "md")
+                shutil.copy2(str(report), str(dest))
+                report_path = str(dest)
+                _log(f"  copied report -> {dest.name}")
+                break
+
+    return {
+        "root": root,
+        "branch": branch_name,
+        "wt_name": wt_name,
+        "uid": uid,
+        "report": report_path,
+        "exit_code": str(result.returncode),
+        "tokens": token_summary,
+        "stderr_log": str(stderr_log),
+        "files_count": str(len(files_list)),
+    }
 
 
 def main() -> None:
@@ -162,7 +356,7 @@ def main() -> None:
     _log("--- git commit detected ---")
     _log(f"cwd={cwd} command={command[:200]}")
 
-    # CRITICAL: prevent recursive triggering — if we're inside a rechecker worktree, skip
+    # CRITICAL: prevent recursive triggering
     if _is_rechecker_worktree(cwd):
         _log("skip: inside rechecker worktree (preventing recursion)")
         _flush_log(project_dir)
@@ -193,184 +387,107 @@ def main() -> None:
         _flush_log(cwd)
         sys.exit(0)
 
-    _log(f"launching orchestrator for {len(git_roots)} repo(s): {git_roots}")
-    _flush_log(cwd)
-
-    # Plugin-scoped agent reference — must match the agent name in agents/ directory
-    orchestrator = "rechecker-plugin:rechecker-orchestrator"
-
-    # Track results for all repos to build the final message
-    results: list[dict[str, str]] = []
-
-    # Resolve plugin root once (for copying bundled scripts)
+    # Resolve plugin root once
     plugin_root = Path(os.environ.get("CLAUDE_PLUGIN_ROOT", "")) or Path(__file__).resolve().parent.parent
 
-    # Capture the HEAD SHA for each git root BEFORE launching worktrees.
-    # The worktree branches from HEAD, but HEAD may differ from the commit
-    # that triggered the hook. We pass the SHA explicitly to the orchestrator.
-    root_head_shas: dict[str, str] = {}
+    # For each git root: accumulate files, check threshold, launch if ready
+    results: list[dict[str, str]] = []
+
     for root in git_roots:
+        # Get HEAD SHA
         try:
             sha_result = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                cwd=root, capture_output=True, text=True, timeout=5,
+                ["git", "rev-parse", "HEAD"], cwd=root,
+                capture_output=True, text=True, timeout=5,
             )
-            root_head_shas[root] = sha_result.stdout.strip()
+            head_sha = sha_result.stdout.strip()
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            root_head_shas[root] = "HEAD"
+            head_sha = "HEAD"
 
-    for root in git_roots:
-        # Ensure TLDR artifacts won't pollute worktree commits
-        _ensure_tldr_gitignored(root)
+        # Get changed files from this commit
+        commit_files = _get_commit_files(root, head_sha)
+        if not commit_files:
+            _log(f"  no files in commit for {root}")
+            continue
 
-        # Copy merge script into .rechecker/ so Claude can find it without CLAUDE_PLUGIN_ROOT
+        # Load pending batch and add new files
         rechecker_dir = Path(root) / ".rechecker"
         rechecker_dir.mkdir(parents=True, exist_ok=True)
-        merge_src = plugin_root / "scripts" / "merge-worktrees.sh"
-        merge_dst = rechecker_dir / "merge-worktrees.sh"
-        if merge_src.is_file():
-            shutil.copy2(str(merge_src), str(merge_dst))
-            merge_dst.chmod(0o755)
+        pending = _load_pending(root)
 
-        # 6-char uuid ties all files from this run together
-        uid = uuid.uuid4().hex[:6]
-        # Worktree name uses uuid only (stays fixed for the run's lifetime)
-        wt_name = f"rck-{uid}"
-        branch_name = f"worktree-{wt_name}"
+        # Deduplicate: if same path already pending, update with latest commit
+        existing_paths = {f["path"] for f in pending["files"]}
+        for f in commit_files:
+            if f["path"] not in existing_paths:
+                pending["files"].append(f)
+                existing_paths.add(f["path"])
 
-        def _rck_name(purpose: str, ext: str) -> str:
-            """Generate rck-{now}_{uid}-{purpose}.{ext} with timestamp at write time."""
-            now = datetime.now().strftime("%Y%m%d_%H%M%S")
-            return f"rck-{now}_{uid}-{purpose}.{ext}"
+        pending["total_files"] = len(pending["files"])
+        pending["total_bytes"] = sum(f["bytes"] for f in pending["files"])
 
-        cmd = [
-            "claude", "--worktree", wt_name,
-            "--agent", orchestrator,
-            "--dangerously-skip-permissions",
-            "-p", f"Run the full recheck pipeline on commit {root_head_shas[root]}.",
-        ]
-        _log(f"  worktree: {wt_name} (uid={uid})")
-        _log(f"  cmd: {' '.join(cmd)}")
-        _log(f"  cwd: {root}")
+        _log(f"  pending: {pending['total_files']} files, {pending['total_bytes']} bytes")
+
+        # Check threshold
+        if not _check_threshold(pending):
+            _log(f"  below threshold ({BATCH_MIN_FILES} files or {BATCH_MIN_BYTES} bytes) — accumulating")
+            _save_pending(root, pending)
+            _flush_log(root)
+            continue
+
+        # Threshold met — launch recheck
+        _log("  THRESHOLD MET — launching recheck")
+        r = _launch_recheck(root, pending, plugin_root)
+        results.append(r)
+
+        # Clear pending after launch
+        _clear_pending(root)
+
+    if not results:
+        _log("no rechecks triggered (below threshold)")
         _flush_log(cwd)
+        # No output — nothing for Claude to see
+        sys.exit(0)
 
-        reports_dev = Path(root) / "reports_dev"
-        reports_dev.mkdir(parents=True, exist_ok=True)
-        stderr_log = reports_dev / _rck_name("stderr", "log")
-        with open(stderr_log, "a") as stderr_f:
-            result = subprocess.run(cmd, cwd=root, stdout=subprocess.DEVNULL, stderr=stderr_f)
-        _log(f"  claude exit code: {result.returncode}")
-
-        # Count tokens from JSONL transcripts (accurate, per-model breakdown)
-        token_summary = ""
-        try:
-            count_script = plugin_root / "scripts" / "count-tokens.py"
-            if count_script.is_file():
-                count_result = subprocess.run(
-                    ["python3", str(count_script), wt_name],
-                    capture_output=True, text=True, timeout=30,
-                )
-                if count_result.returncode == 0:
-                    token_data = json.loads(count_result.stdout)
-                    s = token_data.get("summary", {})
-                    total_in = s.get("input_tokens", 0) + s.get("cache_read_tokens", 0) + s.get("cache_create_tokens", 0)
-                    total_out = s.get("output_tokens", 0)
-                    parts = [f"{total_in:,} in / {total_out:,} out"]
-                    for model, mc in token_data.get("by_model", {}).items():
-                        short_model = model.replace("claude-", "").replace("-4-6", "")
-                        m_in = mc.get("input_tokens", 0) + mc.get("cache_read_input_tokens", 0) + mc.get("cache_creation_input_tokens", 0)
-                        m_out = mc.get("output_tokens", 0)
-                        parts.append(f"{short_model}: {m_in:,}/{m_out:,}")
-                    token_summary = " · ".join(parts)
-        except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
-            pass
-        if token_summary:
-            _log(f"  tokens: {token_summary}")
-
-        # Copy report from worktree to reports_dev/
-        # The final report can be in multiple locations depending on where
-        # the orchestrator wrote it or if it was interrupted:
-        #   1. worktree root: rck-*-report.md (normal completion)
-        #   2. worktree/reports_dev/: rck-*-report.md (alternative)
-        #   3. worktree/.rechecker/reports/: *-loop.md (partial — loops completed but not merged)
-        wt_dir = Path(root) / ".claude" / "worktrees" / wt_name
-        report_path = ""
-        if wt_dir.is_dir():
-            # Search locations in priority order
-            search_dirs = [
-                wt_dir,                         # worktree root
-                wt_dir / "reports_dev",         # reports_dev inside worktree
-                wt_dir / ".rechecker" / "reports",  # intermediate reports
-            ]
-            for search_dir in search_dirs:
-                if report_path:
-                    break
-                if not search_dir.is_dir():
-                    continue
-                # Sort reverse so most recent timestamp comes first
-                for report in sorted(search_dir.glob("rck-*-report.md"), reverse=True):
-                    dest = reports_dev / _rck_name("report", "md")
-                    shutil.copy2(str(report), str(dest))
-                    report_path = str(dest)
-                    _log(f"  copied report -> {dest.name}")
-                    break  # take only the most recent report
-
-        results.append({
-            "root": root,
-            "branch": branch_name,
-            "wt_name": wt_name,
-            "uid": uid,
-            "report": report_path,
-            "exit_code": str(result.returncode),
-            "tokens": token_summary.strip(),
-            "stderr_log": str(stderr_log),
-        })
-
-    # Write rck-*-merge-pending.md in each repo root for Claude to see
+    # Write merge-pending files and build notification
     for r in results:
         now = datetime.now().strftime("%Y%m%d_%H%M%S")
         merge_file = f"rck-{now}_{r['uid']}-merge-pending.md"
         merge_lines = [
             "# Rechecker: Merge Pending",
             "",
-            "The rechecker plugin reviewed your latest commit and fixed bugs.",
+            f"Reviewed {r['files_count']} file(s) from accumulated commits.",
             "",
             f"- **Worktree**: `{r['wt_name']}`",
             f"- **Branch with fixes**: `{r['branch']}`",
         ]
+        if r.get("tokens"):
+            merge_lines.append(f"- **Tokens**: {r['tokens']}")
         if r["report"]:
             merge_lines.append(f"- **Report**: `{r['report']}`")
             merge_lines.append("")
             merge_lines.append("### Report Summary")
             merge_lines.append("")
-            # Inline a brief excerpt from the report so Claude sees it immediately
             try:
                 report_text = Path(r["report"]).read_text()
-                # Extract first 30 lines or up to 2000 chars as summary
                 summary = "\n".join(report_text.splitlines()[:30])
                 if len(summary) > 2000:
-                    summary = summary[:2000] + "\n... (truncated, read full report)"
+                    summary = summary[:2000] + "\n... (truncated)"
                 merge_lines.append(summary)
             except OSError:
                 merge_lines.append("(report file not readable)")
         merge_lines.extend([
             "",
-            "## What you must do",
-            "",
-            "**Read the full report** at the path above, then merge all rechecker fixes at once:",
+            "## Merge the fixes",
             "",
             "```bash",
             f'cd "{r["root"]}" && bash .rechecker/merge-worktrees.sh',
             "```",
-            "",
-            "The merge script handles ancestry checks, conflict resolution, worktree cleanup,",
-            "branch deletion, and report archival. Do NOT merge manually with `git merge`.",
         ])
         notice_path = Path(r["root"]) / merge_file
         notice_path.write_text("\n".join(merge_lines) + "\n")
         _log(f"  wrote {notice_path}")
 
-    # Build context for Claude (additionalContext) AND user (systemMessage)
+    # Build notification for Claude
     has_fixes = any(r["report"] for r in results)
     git_root = results[0]["root"]
 
@@ -380,61 +497,35 @@ def main() -> None:
         "  RECHECKER PLUGIN: CODE REVIEW COMPLETE — YOU MUST MERGE THE FIXES",
         "=======================================================================",
         "",
-        "The rechecker plugin finished reviewing your recent commit(s).",
-        "Bug fixes have been committed to worktree branches and are ready to merge.",
-        "",
     ]
 
     for r in results:
         if r["exit_code"] != "0" and not r["report"]:
-            context_lines.append(f"  - Branch `{r['branch']}`: FAILED (exit code {r['exit_code']}, no report)")
+            context_lines.append(f"  - {r['wt_name']}: FAILED (exit {r['exit_code']})")
         elif r["report"]:
-            context_lines.append(f"  - Branch `{r['branch']}` has fixes. Report: `{r['report']}`")
+            context_lines.append(f"  - {r['wt_name']}: {r['files_count']} files reviewed, fixes ready")
         else:
-            context_lines.append(f"  - Branch `{r['branch']}`: code was clean, no fixes needed.")
+            context_lines.append(f"  - {r['wt_name']}: code was clean")
         if r.get("tokens"):
-            context_lines.append(f"    Token usage: {r['tokens']}")
-        if r.get("stderr_log"):
-            context_lines.append(f"    Full log: `{r['stderr_log']}`")
+            context_lines.append(f"    Tokens: {r['tokens']}")
     context_lines.append("")
 
     if has_fixes:
         context_lines.extend([
-            ">>> REQUIRED ACTION: Run this command NOW to merge all fixes:",
+            ">>> Run this NOW:",
             "",
             "```bash",
             f'cd "{git_root}" && bash .rechecker/merge-worktrees.sh',
             "```",
-            "",
-            "This merges all fix branches, cleans up worktrees, and deletes",
-            "temporary branches and files. It is fully automated and non-blocking.",
-            "",
-            ">>> DO NOT SKIP THIS STEP. Unmerged rechecker branches accumulate",
-            "    and waste disk space. The fixes will NOT appear in your code",
-            "    until you merge them.",
-            "",
-            "Read the reports in docs_dev/ after merging to see what was fixed.",
         ])
-    else:
-        context_lines.append("No fixes needed — all reviewed code was clean.")
 
-    context_lines.extend([
-        "",
-        "=======================================================================",
-        "",
-    ])
+    context_lines.extend(["", "=======================================================================", ""])
 
-    context_msg = "\n".join(context_lines)
-
-    # For async hooks, additionalContext and systemMessage must be TOP-LEVEL fields.
-    # (hookSpecificOutput is for synchronous hooks only.)
-    # The output is delivered to Claude on the next conversation turn.
     output = {
-        "additionalContext": context_msg,
+        "additionalContext": "\n".join(context_lines),
         "systemMessage": "RECHECKER: Review done. Run: bash .rechecker/merge-worktrees.sh",
     }
     print(json.dumps(output))
-
     _flush_log(cwd)
 
 

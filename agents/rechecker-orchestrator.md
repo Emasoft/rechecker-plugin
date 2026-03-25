@@ -66,14 +66,17 @@ UID=$(git branch --show-current | sed 's/^worktree-rck-//')
 echo "UID=$UID"
 ```
 
-The target commit SHA is provided in your launch prompt (e.g. "Run the full recheck pipeline on commit abc1234."). Extract it and use it instead of HEAD for all git commands:
+The file list comes from `.rechecker/batch-files.txt` (written by the hook, contains accumulated files across commits). If it exists, use it. Otherwise fall back to `git show` with the commit SHA from the launch prompt:
 ```bash
-# TARGET_SHA comes from the launch prompt — extract the 7+ char hex after "on commit "
-# If not found, fall back to HEAD
-TARGET_SHA="${TARGET_SHA:-HEAD}"
-git show --name-only --format= --diff-filter=d "$TARGET_SHA" > .rechecker/files.txt
-git log -1 --format=%s "$TARGET_SHA" > .rechecker/commit-message.txt
 mkdir -p .rechecker/reports
+if [[ -f .rechecker/batch-files.txt ]]; then
+  cp .rechecker/batch-files.txt .rechecker/files.txt
+  echo "Using batch file list"
+else
+  TARGET_SHA="${TARGET_SHA:-HEAD}"
+  git show --name-only --format= --diff-filter=d "$TARGET_SHA" > .rechecker/files.txt
+fi
+git log -1 --format=%s HEAD > .rechecker/commit-message.txt
 ```
 
 3. Initialize the pipeline index (assigns FIDs, creates groups):
