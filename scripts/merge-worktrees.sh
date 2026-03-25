@@ -139,7 +139,7 @@ remove_worktree_and_branch() {
       warn "Worktree $wt_path has an active process — skipping"
       return 1
     fi
-    git worktree remove "$wt_path" --force 2>/dev/null && removed_wt=true || warn "Failed to remove worktree: $wt_path"
+    if git worktree remove "$wt_path" --force 2>/dev/null; then removed_wt=true; else warn "Failed to remove worktree: $wt_path"; fi
   fi
 
   # Delete branch (safe -D since we're discarding, not merging)
@@ -170,7 +170,6 @@ DISCARD_ALL=false
 DISCARD_NAMES=()
 
 # Parse arguments — need to handle --discard with optional names
-ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=true ;;
@@ -387,7 +386,7 @@ else
         warn "Worktree $wt_path has an active process — skipping"
         continue
       fi
-      git worktree remove "$wt_path" --force 2>/dev/null && info "Removed: $wt_path" || warn "Failed: $wt_path"
+      if git worktree remove "$wt_path" --force 2>/dev/null; then info "Removed: $wt_path"; else warn "Failed: $wt_path"; fi
     done
     git worktree prune 2>/dev/null || true
   fi
@@ -552,7 +551,7 @@ while IFS= read -r branch; do
   pre_merge_head=$(git rev-parse HEAD)
 
   MERGE_IN_PROGRESS=true
-  merge_output=$(git merge -X theirs "$branch" --no-edit 2>&1) && merge_ok=true || merge_ok=false
+  if git merge -X theirs "$branch" --no-edit 2>/dev/null; then merge_ok=true; else merge_ok=false; fi
   MERGE_IN_PROGRESS=false
 
   if $merge_ok; then
