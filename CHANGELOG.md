@@ -6,7 +6,20 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Accurate token counting + fix wrong-commit bug
+
+### Testing
+
+- Add inline comment to trigger rechecker pipeline
+## [2.2.12] - 2026-03-25
+
+### Features
+
 - Add --discard and --discard-all to merge-worktrees.sh
+
+### Miscellaneous Tasks
+
+- Bump version to 2.2.12
 ## [2.2.11] - 2026-03-23
 
 ### Features
