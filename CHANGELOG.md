@@ -6,7 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- Add --discard and --discard-all to merge-worktrees.sh
+## [2.2.11] - 2026-03-23
+
+### Features
+
 - Add maxTurns cap and token usage tracking per worktree
+
+### Miscellaneous Tasks
+
+- Bump version to 2.2.11
 ## [2.2.10] - 2026-03-23
 
 ### Bug Fixes
