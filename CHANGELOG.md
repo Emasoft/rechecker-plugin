@@ -6,11 +6,20 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Resolve all shellcheck warnings in merge-worktrees.sh
+## [2.2.15] - 2026-03-25
+
+### Bug Fixes
+
 - Track all Serena files (index, config) for worktree propagation
 
 ### Features
 
 - Instruct all agents to use Serena MCP and TLDR for surgical edits
+
+### Miscellaneous Tasks
+
+- Bump version to 2.2.15
 ## [2.2.14] - 2026-03-25
 
 ### Features
