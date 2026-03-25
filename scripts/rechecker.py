@@ -196,7 +196,8 @@ def main() -> None:
     _log(f"launching orchestrator for {len(git_roots)} repo(s): {git_roots}")
     _flush_log(cwd)
 
-    orchestrator = "rechecker-plugin:rechecker-orchestrator"
+    # Plugin-scoped agent reference — must match the agent name in agents/ directory
+orchestrator = "rechecker-plugin:rechecker-orchestrator"
 
     # Track results for all repos to build the final message
     results: list[dict[str, str]] = []
