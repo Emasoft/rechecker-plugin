@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Concise recheck report format with token usage and per-fix details
+## [3.2.0] - 2026-03-26
+
+### Bug Fixes
+
 - Exact project dir match + correct token counting (105.9% match with devtools)
 - Replace json.loads with regex extraction — zero JSON parsing
 
@@ -13,6 +18,10 @@ All notable changes to this project will be documented in this file.
 
 - Add requestId deduplication from claude-devtools to token counter
 - True streaming — read only head (200B) + tail (1200B) per line, no json.loads
+
+### Miscellaneous Tasks
+
+- Bump version to 3.2.0
 ## [3.1.0] - 2026-03-26
 
 ### Bug Fixes
