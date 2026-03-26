@@ -149,7 +149,7 @@ Wait for the fixer to complete.
 
 Each pass reviews the code, then fixes any issues found before moving to the next pass.
 
-**For normal files (≤250KB):** send to `mcp__plugin_llm-externalizer_llm-externalizer__code_task` with `ensemble: false`.
+**For normal files (≤250KB):** send to `mcp__plugin_llm-externalizer_llm-externalizer__code_task`.
 
 **For large files (>250KB):** spawn a general-purpose agent with `model: opus` for each file. Pass the file path and the same review instructions, plus these additional instructions for the opus agent:
 
