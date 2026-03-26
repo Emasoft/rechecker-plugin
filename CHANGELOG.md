@@ -6,12 +6,27 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Exact project dir match + correct token counting (105.9% match with devtools)
+- Replace json.loads with regex extraction — zero JSON parsing
+
+### Features
+
+- Add requestId deduplication from claude-devtools to token counter
+- True streaming — read only head (200B) + tail (1200B) per line, no json.loads
+## [3.1.0] - 2026-03-26
+
+### Bug Fixes
+
 - Take token snapshot in separate Bash call to guarantee transcript flush
 - Calibrate token snapshot — read a tiny file first to flush transcript usage
 
 ### Features
 
 - Delta-based token counting — snapshot before, diff after
+
+### Miscellaneous Tasks
+
+- Bump version to 3.1.0
 ## [3.0.4] - 2026-03-26
 
 ### Bug Fixes
