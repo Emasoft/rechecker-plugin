@@ -6,7 +6,20 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Remove obsolete ensemble parameter — now controlled at profile level
+
+### Documentation
+
+- Clarify ensemble mode is mandatory — dual-model review increases bug detection by 35%
+## [3.2.1] - 2026-03-26
+
+### Bug Fixes
+
 - Concise recheck report format with token usage and per-fix details
+
+### Miscellaneous Tasks
+
+- Bump version to 3.2.1
 ## [3.2.0] - 2026-03-26
 
 ### Bug Fixes
