@@ -191,6 +191,7 @@ CRITICAL RULES:
 - NEVER suggest removing code you think is "unused" — it may be used by other files
 - NEVER suggest removing variables, imports, functions, or classes unless they cause an error
 - NEVER suggest style-only changes (formatting, naming, reordering)
+- Do NOT assume a version of a library or tool does not exist — it may have been released after your knowledge cutoff
 - If the code is correct for this pass, say "No issues found"
 
 For each issue found, report:
