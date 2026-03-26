@@ -22,6 +22,9 @@ Example: `"Filter lint output: reports_dev/rck-20260326_140000/pass0-lint-raw.tx
    - For mypy: keep lines containing `: error:` — discard `: warning:` and `: note:`
    - For eslint: keep lines with `error` severity — discard `warning`
    - For tsc: keep lines containing `: error TS` — discard others
+   - For shellcheck: keep lines with `error` level (SC prefix) — discard `warning`, `info`, `style`
+   - For yamllint: keep lines containing `: error` — discard `: warning`
+   - For `INVALID:` lines (JSON/TOML/XML/HTML validators): always keep — these are errors
    - For general output: keep lines containing `error` (case-insensitive) that look like actual error reports, discard `warning`, `note`, `info`
 3. Write the filtered errors to the output file path. One error per line, preserving the original format (file path, line number, message).
 4. If no errors remain after filtering, write exactly: `NO ERRORS`

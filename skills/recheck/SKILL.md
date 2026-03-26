@@ -20,10 +20,10 @@ git show --name-only --format= --diff-filter=d HEAD
 ```
 
 Skip ONLY these file types — everything else is reviewable:
-- Media: `*.png, *.jpg, *.jpeg, *.gif, *.ico, *.mp3, *.mp4, *.webm, *.webp, *.avif, *.bmp, *.tiff, *.eps, *.ai`
-- Binary: `*.whl, *.tar.gz, *.zip, *.egg, *.so, *.dylib, *.dll, *.exe, *.bin, *.o, *.a, *.class`
+- Media: `*.png, *.jpg, *.jpeg, *.gif, *.ico, *.mp3, *.mp4, *.webm, *.webp, *.avif, *.bmp, *.tiff, *.eps, *.ai, *.pdf`
+- Binary: `*.whl, *.tar.gz, *.zip, *.egg, *.so, *.dylib, *.dll, *.exe, *.bin, *.o, *.a, *.class, *.pyc, *.pyo`
 - Fonts: `*.woff, *.woff2, *.ttf, *.otf, *.eot`
-- Data blobs: `*.sqlite, *.db, *.parquet`
+- Data blobs: `*.sqlite, *.db, *.parquet, *.csv, *.tsv`
 - Generated: `CHANGELOG.md, LICENSE, *.min.js, *.min.css, *.map, *.bundle.js, *.chunk.js`
 - Lock files: `*.lock, *.lockb, uv.lock, package-lock.json, yarn.lock, Cargo.lock`
 
@@ -59,41 +59,62 @@ Note the printed values. Use them literally in all subsequent bash commands — 
 
 Run the appropriate linter for each file type and save all output to a single file. Do NOT read the output into context.
 
-Group the changed files by extension and run the matching linter for each group. Only run linters that are available on PATH — skip gracefully if a linter is not installed.
+Group the changed files by extension and run the matching linter for each group. Only run linters for file types present in the changed files. Skip linters that are not installed.
+
+Use `uvx` (for Python tools) and `bunx` (for JS tools) to run linters without requiring them to be pre-installed. These download and cache the tool on first use.
 
 ```bash
-# Python (.py)
-uv run ruff check <files> >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; uv run mypy <files> --ignore-missing-imports >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; true
+# Python (.py) — uvx runs ruff/mypy without installing into the project
+uvx ruff check <files> >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null
+uvx mypy <files> --ignore-missing-imports >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null
+true
 
-# JavaScript/TypeScript (.js, .ts, .jsx, .tsx, .mjs, .cjs)
-npx eslint <files> >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; npx tsc --noEmit >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; true
+# JavaScript/TypeScript (.js, .ts, .jsx, .tsx, .mjs, .cjs) — bunx avoids npx auto-install
+bunx --bun eslint <files> >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null
+bunx --bun tsc --noEmit >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null
+true
 
-# JSON (.json)
-for f in <json-files>; do python3 -m json.tool "$f" > /dev/null 2>> "$REPORT_DIR/pass0-lint-raw.txt" || echo "JSON INVALID: $f" >> "$REPORT_DIR/pass0-lint-raw.txt"; done
+# JSON (.json) — stdlib, no install needed
+for f in <json-files>; do
+  python3 -m json.tool "$f" > /dev/null 2>&1 || echo "error: JSON INVALID: $f" >> "$REPORT_DIR/pass0-lint-raw.txt"
+done
 
-# YAML (.yaml, .yml)
-python3 -c "import yaml, sys; yaml.safe_load(open(sys.argv[1]))" <file> 2>> "$REPORT_DIR/pass0-lint-raw.txt" || echo "YAML INVALID: <file>" >> "$REPORT_DIR/pass0-lint-raw.txt"
+# YAML (.yaml, .yml) — use uvx yamllint or fallback to Python stdlib attempt
+uvx yamllint -d relaxed <files> >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null || true
 
-# TOML (.toml)
-python3 -c "import tomllib, sys; tomllib.load(open(sys.argv[1],'rb'))" <file> 2>> "$REPORT_DIR/pass0-lint-raw.txt" || echo "TOML INVALID: <file>" >> "$REPORT_DIR/pass0-lint-raw.txt"
+# TOML (.toml) — stdlib tomllib (Python 3.11+)
+for f in <toml-files>; do
+  python3 -c "import tomllib,sys; tomllib.load(open(sys.argv[1],'rb'))" "$f" 2>&1 || echo "error: TOML INVALID: $f"
+done >> "$REPORT_DIR/pass0-lint-raw.txt"
 
-# XML/SVG/HTML (.xml, .svg, .html, .xhtml)
-python3 -c "from xml.etree.ElementTree import parse; parse(sys.argv[1])" <file> 2>> "$REPORT_DIR/pass0-lint-raw.txt" || echo "XML INVALID: <file>" >> "$REPORT_DIR/pass0-lint-raw.txt"
+# XML/SVG (.xml, .svg, .xhtml) — stdlib ElementTree
+for f in <xml-files>; do
+  python3 -c "import xml.etree.ElementTree as ET,sys; ET.parse(sys.argv[1])" "$f" 2>&1 || echo "error: XML INVALID: $f"
+done >> "$REPORT_DIR/pass0-lint-raw.txt"
+
+# HTML (.html, .htm) — stdlib html.parser (checks for parse errors)
+for f in <html-files>; do
+  python3 -c "
+import sys, html.parser
+class P(html.parser.HTMLParser):
+    def handle_starttag(s,t,a): pass
+p = P()
+p.feed(open(sys.argv[1]).read())
+" "$f" 2>&1 || echo "error: HTML INVALID: $f"
+done >> "$REPORT_DIR/pass0-lint-raw.txt"
 
 # Shell (.sh, .bash, .zsh)
 shellcheck <files> >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; true
 
 # CSS/SCSS/LESS (.css, .scss, .less)
-npx stylelint <files> >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; true
+bunx --bun stylelint <files> >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; true
 
-# Rust (.rs)
+# Rust (.rs) — only if Cargo.toml exists in project root
 cargo check 2>> "$REPORT_DIR/pass0-lint-raw.txt"; true
 
-# Go (.go)
+# Go (.go) — only if go.mod exists in project root
 go vet <files> 2>> "$REPORT_DIR/pass0-lint-raw.txt"; true
 ```
-
-Only run linters for file types that are present in the changed files. Skip linters that are not installed.
 
 Then spawn a `rechecker-plugin:lint-filter` agent (haiku) to strip warnings, keeping only errors:
 - Input: `$REPORT_DIR/pass0-lint-raw.txt`
