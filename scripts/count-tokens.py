@@ -72,6 +72,14 @@ def find_worktree_transcripts(worktree_name: str) -> list[Path]:
     return sorted(results)
 
 
+def _skip_to_next_line(f) -> None:  # type: ignore[no-untyped-def]
+    """Consume bytes until the next newline without buffering the whole line."""
+    while True:
+        chunk = f.readline(65536)
+        if not chunk or chunk.endswith("\n"):
+            break
+
+
 def parse_transcript(
     path: Path,
     since: datetime | None = None,
@@ -79,19 +87,42 @@ def parse_transcript(
 ) -> dict[str, dict[str, int]]:
     """Parse a JSONL transcript and return token counts by model.
 
-    If `since` is set, only count entries with a timestamp >= since.
-    If `until` is set, only count entries with a timestamp <= until.
+    Memory-safe: peeks at the first 4KB of each line to check for "usage".
+    Lines with screenshots/base64 can be 50MB+ — they are skipped without
+    ever being fully read into memory.
     """
     counts: dict[str, dict[str, int]] = {}
+    # Peek size: 4KB is enough to find "type", "timestamp", and "usage" fields
+    # which appear early in the JSON. Screenshot base64 data comes later.
+    PEEK = 4096
 
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
-            for line in f:
-                # Fast pre-filter: skip lines that can't contain usage data.
-                # Lines with screenshots/images are huge but never have "usage".
-                # This avoids json.loads on multi-MB base64 lines.
-                if '"usage"' not in line:
+            while True:
+                peek = f.readline(PEEK)
+                if not peek:
+                    break
+
+                # If the line is longer than PEEK, we only got a prefix.
+                # Check if "usage" appears in the prefix — if not, skip the rest.
+                is_partial = not peek.endswith("\n")
+
+                if '"usage"' not in peek:
+                    if is_partial:
+                        _skip_to_next_line(f)
                     continue
+
+                # "usage" found in prefix — read the rest of the line if partial
+                if is_partial:
+                    rest = []
+                    while True:
+                        chunk = f.readline(65536)
+                        rest.append(chunk)
+                        if not chunk or chunk.endswith("\n"):
+                            break
+                    line = peek + "".join(rest)
+                else:
+                    line = peek
 
                 line = line.strip()
                 if not line:
