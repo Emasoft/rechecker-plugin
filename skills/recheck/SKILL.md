@@ -46,7 +46,43 @@ mkdir -p "$REPORT_DIR"
 
 All review outputs and fix reports go in this folder.
 
-## Step 3: Review-fix passes
+## Step 3: Pass 0 — Lint
+
+Run linters on the changed files and save the raw output to a file. Do NOT read the output into context.
+
+For Python files:
+```bash
+uv run ruff check <file1> <file2> ... > "$REPORT_DIR/pass0-lint-raw.txt" 2>&1
+uv run mypy <file1> <file2> ... --ignore-missing-imports >> "$REPORT_DIR/pass0-lint-raw.txt" 2>&1
+```
+
+For JavaScript/TypeScript files:
+```bash
+npx eslint <file1> <file2> ... > "$REPORT_DIR/pass0-lint-raw.txt" 2>&1
+npx tsc --noEmit <file1> <file2> ... >> "$REPORT_DIR/pass0-lint-raw.txt" 2>&1
+```
+
+For mixed projects, run whichever linters apply.
+
+Then spawn a `rechecker-plugin:lint-filter` agent (haiku) to strip warnings, keeping only errors:
+- Input: `$REPORT_DIR/pass0-lint-raw.txt`
+- Output: `$REPORT_DIR/pass0-lint-errors.txt`
+
+Wait for the filter agent to complete.
+
+If `pass0-lint-errors.txt` contains `NO ERRORS`, skip to the review passes.
+
+Otherwise, spawn **one** `rechecker-plugin:sonnet-code-fixer` agent with:
+- The list of files with lint errors
+- The path to `$REPORT_DIR/pass0-lint-errors.txt`
+- Fix report path: `$REPORT_DIR/pass0-fixes.md`
+- "Fix ONLY the lint errors listed. Do NOT fix warnings. Do NOT make style changes."
+
+Wait for the fixer to complete.
+
+---
+
+## Step 4: Review-fix passes
 
 Each pass reviews the code, then fixes any issues found before moving to the next pass.
 
@@ -237,7 +273,7 @@ If issues found → spawn fixer, wait for completion.
 
 ---
 
-## Step 4: Commit fixes (recursion-safe)
+## Step 5: Commit fixes (recursion-safe)
 
 If no files were changed by any fixer across all passes, skip this step — nothing to commit.
 
@@ -256,7 +292,7 @@ EOF
 )"
 ```
 
-## Step 5: Token usage report
+## Step 6: Token usage report
 
 Run the token counter to measure how much the recheck cost. The `$RCK_START_TS` variable was recorded in Step 2.
 
@@ -266,7 +302,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/count-tokens.py" --since "$RCK_START_TS"
 
 Save the output to `$REPORT_DIR/token-usage.json`.
 
-## Step 6: Summary
+## Step 7: Summary
 
 Report to the user:
 - How many files were reviewed
