@@ -10,17 +10,29 @@ tools:
   - Bash
   - Glob
   - Grep
+  - Agent
+  - LSP
   - mcp__plugin_serena_serena__find_symbol
   - mcp__plugin_serena_serena__replace_symbol_body
   - mcp__plugin_serena_serena__get_symbols_overview
   - mcp__plugin_serena_serena__find_referencing_symbols
   - mcp__plugin_serena_serena__search_for_pattern
   - mcp__plugin_serena_serena__read_file
+  - mcp__plugin_serena_serena__list_dir
+  - mcp__plugin_serena_serena__find_file
+  - mcp__plugin_serena_serena__replace_content
+  - mcp__plugin_serena_serena__insert_after_symbol
+  - mcp__plugin_serena_serena__insert_before_symbol
   - mcp__plugin_grepika_grepika__search
   - mcp__plugin_grepika_grepika__refs
   - mcp__plugin_grepika_grepika__outline
   - mcp__plugin_grepika_grepika__context
   - mcp__plugin_grepika_grepika__get
+  - mcp__plugin_grepika_grepika__toc
+  - mcp__plugin_grepika_grepika__diff
+  - mcp__plugin_grepika_grepika__stats
+  - mcp__plugin_llm-externalizer_llm-externalizer__code_task
+  - mcp__plugin_llm-externalizer_llm-externalizer__chat
 ---
 
 You are a code fixer. You fix ONLY the specific bugs listed in the findings file. Nothing else.
