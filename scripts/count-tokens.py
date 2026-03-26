@@ -91,13 +91,19 @@ def parse_transcript(
     PEEK = 512
 
     try:
-        with open(path, "rb") as f:
-            size = f.seek(0, 2)
-            if size == 0:
-                return counts
-            f.seek(0)
-            mm = mmap_mod.mmap(f.fileno(), 0, access=mmap_mod.ACCESS_READ)
+        f = open(path, "rb")  # noqa: SIM115 — kept open alongside mmap
     except OSError:
+        return counts
+
+    try:
+        size = f.seek(0, 2)
+        if size == 0:
+            f.close()
+            return counts
+        f.seek(0)
+        mm = mmap_mod.mmap(f.fileno(), 0, access=mmap_mod.ACCESS_READ)
+    except (OSError, ValueError):
+        f.close()
         return counts
 
     try:
@@ -171,6 +177,7 @@ def parse_transcript(
             c["api_calls"] += 1
     finally:
         mm.close()
+        f.close()
 
     return counts
 
