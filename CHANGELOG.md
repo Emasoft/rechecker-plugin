@@ -6,6 +6,27 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Remove tools restriction from fixer agent — allow all tools
+- Prioritize Serena MCP as primary tool in fixer agent instructions
+- Audit fixes — clarify shell var persistence, fix lint stderr, clean step numbering
+- Add cleanup step — move reports to .rechecker/reports/, remove temp files
+- Add --help flag to count-tokens.py
+- Remove stale v2 gitignore patterns (rck-*-merge-pending.md, rck-*-report.md)
+
+### Documentation
+
+- Rewrite README for v3 architecture — no worktrees, blocking skill, 3+1 passes
+
+### Features
+
+- Expand fixer agent tools — add Serena insert/replace, Grepika toc/diff, LLM Externalizer, LSP, Agent
+- Add Pass 0 lint check with haiku lint-filter agent
+- Add session UUID, commit hash, and history.jsonl for recheck audit trail
+- Add finalize-session.py script — automates token counting, history, and cleanup
+## [3.0.1] - 2026-03-26
+
+### Bug Fixes
+
 - Sync README badge to v3.0.0
 
 ### Features
@@ -16,6 +37,7 @@ All notable changes to this project will be documented in this file.
 ### Miscellaneous Tasks
 
 - Bump version to 3.0.0
+- Bump version to 3.0.1
 
 ### Refactor
 
