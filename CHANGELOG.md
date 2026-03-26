@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Review all code/config files, not just source code
+- Use uvx/bunx for linters, fix SVG/HTML/YAML/TOML validation, add pdf to skip list
+## [3.0.3] - 2026-03-26
+
+### Bug Fixes
+
 - Add --until to count-tokens.py to scope token counts to recheck window
 - Skip multi-MB lines before json.loads to avoid OOM on large transcripts
 - Memory-safe JSONL parsing — peek first 4KB, skip multi-MB lines without reading
@@ -13,6 +19,10 @@ All notable changes to this project will be documented in this file.
 - Prevent UnboundLocalError if mmap fails, keep fd open alongside mmap
 - Error on --until without value instead of silently ignoring
 - Remove stale 'estimated cost' from docstring
+
+### Miscellaneous Tasks
+
+- Bump version to 3.0.3
 
 ### Refactor
 
