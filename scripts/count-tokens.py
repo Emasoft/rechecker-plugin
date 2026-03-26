@@ -75,10 +75,12 @@ def find_worktree_transcripts(worktree_name: str) -> list[Path]:
 def parse_transcript(
     path: Path,
     since: datetime | None = None,
+    until: datetime | None = None,
 ) -> dict[str, dict[str, int]]:
     """Parse a JSONL transcript and return token counts by model.
 
     If `since` is set, only count entries with a timestamp >= since.
+    If `until` is set, only count entries with a timestamp <= until.
     """
     counts: dict[str, dict[str, int]] = {}
 
@@ -96,13 +98,15 @@ def parse_transcript(
                 if entry.get("type") != "assistant":
                     continue
 
-                # Filter by timestamp if --since is used
-                if since:
+                # Filter by timestamp window
+                if since or until:
                     ts_str = entry.get("timestamp")
                     if ts_str:
                         try:
                             ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-                            if ts < since:
+                            if since and ts < since:
+                                continue
+                            if until and ts > until:
                                 continue
                         except (ValueError, TypeError):
                             continue
@@ -192,11 +196,12 @@ def main() -> None:
         print("Count tokens used in a time window or worktree session.")
         print()
         print("Usage:")
-        print("  python3 count-tokens.py --since <ISO-timestamp>")
+        print("  python3 count-tokens.py --since <ISO-timestamp> [--until <ISO-timestamp>]")
         print("  python3 count-tokens.py --worktree <name>")
         print()
         print("Options:")
         print("  --since <ts>     Count tokens from API calls after this timestamp")
+        print("  --until <ts>     Count tokens from API calls before this timestamp")
         print("  --worktree <name>  Count tokens from a specific worktree session")
         print("  -h, --help       Show this help")
         sys.exit(0)
@@ -215,6 +220,18 @@ def main() -> None:
             print(f"Invalid timestamp: {since_str}", file=sys.stderr)
             sys.exit(1)
 
+        until: datetime | None = None
+        if "--until" in args:
+            u_idx = args.index("--until")
+            if u_idx + 1 < len(args):
+                try:
+                    until = datetime.fromisoformat(args[u_idx + 1].replace("Z", "+00:00"))
+                    if until.tzinfo is None:
+                        until = until.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    print(f"Invalid --until timestamp: {args[u_idx + 1]}", file=sys.stderr)
+                    sys.exit(1)
+
         transcripts = find_current_transcripts()
         if not transcripts:
             print(json.dumps({"error": "No transcripts found"}))
@@ -229,7 +246,7 @@ def main() -> None:
             except OSError:
                 continue
 
-            counts = parse_transcript(t, since=since)
+            counts = parse_transcript(t, since=since, until=until)
             for model, mc in counts.items():
                 if model not in all_counts:
                     all_counts[model] = {
@@ -242,7 +259,10 @@ def main() -> None:
                 for key in all_counts[model]:
                     all_counts[model][key] += mc[key]
 
-        result = build_result(f"since {since_str}", all_counts)
+        label = f"since {since_str}"
+        if until:
+            label += f" until {args[args.index('--until') + 1]}"
+        result = build_result(label, all_counts)
         print(json.dumps(result, indent=2))
 
     elif "--worktree" in args:

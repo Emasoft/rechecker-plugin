@@ -40,13 +40,14 @@ def main() -> None:
     rechecker_dir = Path(".rechecker")
     rechecker_dir.mkdir(exist_ok=True)
 
-    # 1. Count tokens
+    # 1. Count tokens (scoped to [start, now] window)
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", str(Path(__file__).parent.parent))
     count_script = Path(plugin_root) / "scripts" / "count-tokens.py"
+    end_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     token_data = {}
     if count_script.exists():
         result = subprocess.run(
-            [sys.executable, str(count_script), "--since", args.start],
+            [sys.executable, str(count_script), "--since", args.start, "--until", end_ts],
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode == 0:
@@ -62,8 +63,7 @@ def main() -> None:
         with open(token_file, "w") as f:
             json.dump(token_data, f, indent=2)
 
-    # 3. Build session record
-    end_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    # 3. Build session record (end_ts already computed above for token counting)
     session = {
         "uuid": args.uuid,
         "commit": args.commit,
