@@ -3,7 +3,7 @@ name: recheck
 description: Review and fix the last committed code changes
 ---
 
-Automated code review and fix pipeline for the latest commit. Runs inline, blocking. Three mandatory passes plus one conditional security pass.
+Automated code review and fix pipeline for the latest commit. Runs inline, blocking. Lint pass + three review passes + one conditional security pass.
 
 ## Recursion guard
 
@@ -37,29 +37,26 @@ If no code files remain after filtering, stop — nothing to review.
 
 ## Step 2: Setup report folder
 
-Record the start timestamp (for token counting later) and create the report folder:
+Record the start timestamp and create the report folder. **Remember both values** — you will need them in every subsequent step.
+
 ```bash
-RCK_START_TS=$(date -u +%Y-%m-%dT%H:%M:%S)
-REPORT_DIR="reports_dev/rck-$(date +%Y%m%d_%H%M%S)"
-mkdir -p "$REPORT_DIR"
+RCK_START_TS=$(date -u +%Y-%m-%dT%H:%M:%S) && REPORT_DIR="reports_dev/rck-$(date +%Y%m%d_%H%M%S)" && mkdir -p "$REPORT_DIR" && echo "RCK_START_TS=$RCK_START_TS REPORT_DIR=$REPORT_DIR"
 ```
 
-All review outputs and fix reports go in this folder.
+Note the printed values. Use them literally in all subsequent bash commands — shell variables do not persist across separate tool calls.
 
-## Step 3: Pass 0 — Lint
+## Step 3: Lint pass
 
 Run linters on the changed files and save the raw output to a file. Do NOT read the output into context.
 
 For Python files:
 ```bash
-uv run ruff check <file1> <file2> ... > "$REPORT_DIR/pass0-lint-raw.txt" 2>&1
-uv run mypy <file1> <file2> ... --ignore-missing-imports >> "$REPORT_DIR/pass0-lint-raw.txt" 2>&1
+uv run ruff check <file1> <file2> ... > "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; uv run mypy <file1> <file2> ... --ignore-missing-imports >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; true
 ```
 
 For JavaScript/TypeScript files:
 ```bash
-npx eslint <file1> <file2> ... > "$REPORT_DIR/pass0-lint-raw.txt" 2>&1
-npx tsc --noEmit <file1> <file2> ... >> "$REPORT_DIR/pass0-lint-raw.txt" 2>&1
+npx eslint <file1> <file2> ... > "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; npx tsc --noEmit >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; true
 ```
 
 For mixed projects, run whichever linters apply.
@@ -82,7 +79,7 @@ Wait for the fixer to complete.
 
 ---
 
-## Step 4: Review-fix passes
+## Step 4: Review passes
 
 Each pass reviews the code, then fixes any issues found before moving to the next pass.
 
@@ -306,9 +303,10 @@ Save the output to `$REPORT_DIR/token-usage.json`.
 
 Report to the user:
 - How many files were reviewed
-- Issues found per pass (correctness / functional / adversarial / security) with severity counts
+- Lint errors found and fixed (from lint pass)
+- Issues found per review pass (correctness / functional / adversarial / security) with severity counts
 - What was fixed, what was skipped
-- Whether Pass 4 (security) was triggered and why
+- Whether the security pass was triggered and why
 - Whether a commit was made
 - **Token usage**: total tokens, estimated cost, breakdown by model (from token-usage.json)
 - Location of reports: `$REPORT_DIR/`
