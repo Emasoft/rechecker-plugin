@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Bug Fixes
+
+- Instruct LLM reviewers not to flag unknown library versions as bugs
+## [3.2.3] - 2026-03-26
+
+### Miscellaneous Tasks
+
+- Bump version to 3.2.3
 ## [3.2.2] - 2026-03-26
 
 ### Bug Fixes
