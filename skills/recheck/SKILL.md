@@ -299,7 +299,22 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/count-tokens.py" --since "$RCK_START_TS"
 
 Save the output to `$REPORT_DIR/token-usage.json`.
 
-## Step 7: Summary
+## Step 7: Cleanup
+
+Move all reports from `$REPORT_DIR` into `.rechecker/reports/` (the permanent gitignored location), then remove the temp report folder:
+
+```bash
+mkdir -p .rechecker/reports && mv "$REPORT_DIR"/* .rechecker/reports/ && rmdir "$REPORT_DIR"
+```
+
+Also move any LLM Externalizer output files generated during this run into the same folder:
+```bash
+mv llm_externalizer_output/rck-* .rechecker/reports/ 2>/dev/null; mv llm_externalizer_output/*review* .rechecker/reports/ 2>/dev/null; true
+```
+
+Both `.rechecker/` and `llm_externalizer_output/` are already in `.gitignore` — nothing leaks into git.
+
+## Step 8: Summary
 
 Report to the user:
 - How many files were reviewed
@@ -309,4 +324,4 @@ Report to the user:
 - Whether the security pass was triggered and why
 - Whether a commit was made
 - **Token usage**: total tokens, estimated cost, breakdown by model (from token-usage.json)
-- Location of reports: `$REPORT_DIR/`
+- Location of reports: `.rechecker/reports/`
