@@ -1,18 +1,6 @@
 {
-  "description": "Rechecker: prompts Claude to review code after git commits",
+  "description": "Rechecker: error logging only",
   "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo '{\"systemMessage\":\"If files were committed, run /recheck to review and fix them.\"}'",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "StopFailure": [
       {
         "matcher": "rate_limit|server_error",

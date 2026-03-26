@@ -1,58 +1,85 @@
 #!/usr/bin/env python3
-"""count-tokens.py — Count tokens used by a rechecker worktree run.
+"""count-tokens.py — Count tokens used in a time window or a worktree session.
 
-Parses Claude Code JSONL transcript files (orchestrator + subagents)
-to produce an accurate token breakdown by model.
+Parses Claude Code JSONL transcript files to produce a token breakdown by model.
 
 Usage:
-    python3 count-tokens.py <worktree-name>
-    python3 count-tokens.py rck-020c93
+    python3 count-tokens.py --since <ISO-timestamp>
+    python3 count-tokens.py --since 2026-03-26T14:00:00
+    python3 count-tokens.py --worktree <worktree-name>   (legacy mode)
 
 Output: JSON with per-model and total token counts + estimated cost.
 """
 
 import json
+import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
-# Pricing per million tokens (as of 2026-03)
 PRICING = {
     "claude-opus-4-6": {"input": 15.0, "output": 75.0, "cache_read": 1.5, "cache_create": 18.75},
     "claude-sonnet-4-6": {"input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_create": 3.75},
     "claude-haiku-4-5": {"input": 0.8, "output": 4.0, "cache_read": 0.08, "cache_create": 1.0},
 }
 
-# Aliases
 MODEL_ALIASES = {
     "claude-opus-4-6[1m]": "claude-opus-4-6",
     "claude-sonnet-4-6[1m]": "claude-sonnet-4-6",
 }
 
 
-def find_transcripts(worktree_name: str) -> list[Path]:
-    """Find all JSONL transcript files for a worktree session."""
-    home = Path.home()
-    # Claude Code stores projects under ~/.claude/projects/{encoded-path}/
-    projects_dir = home / ".claude" / "projects"
+def find_current_transcripts() -> list[Path]:
+    """Find JSONL transcripts for the current project only.
+
+    Uses CLAUDE_PROJECT_DIR env var to identify the project,
+    then looks for the matching encoded project dir under ~/.claude/projects/.
+    """
+    projects_dir = Path.home() / ".claude" / "projects"
     if not projects_dir.is_dir():
         return []
 
-    # Search for directories matching the worktree name
+    # Scope to the current project by matching the encoded CWD in the dir name
+    project_dir_hint = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
+    # Claude encodes paths as -Users-foo-bar (dashes replace slashes)
+    encoded_hint = project_dir_hint.replace("/", "-").lstrip("-")
+
+    results = []
+    for project_dir in projects_dir.iterdir():
+        if not project_dir.is_dir():
+            continue
+        # Only match dirs that contain our project path encoding
+        if encoded_hint not in project_dir.name:
+            continue
+        for jsonl in project_dir.rglob("*.jsonl"):
+            results.append(jsonl)
+    return sorted(results, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def find_worktree_transcripts(worktree_name: str) -> list[Path]:
+    """Find JSONL transcripts for a specific worktree."""
+    projects_dir = Path.home() / ".claude" / "projects"
+    if not projects_dir.is_dir():
+        return []
     results = []
     for project_dir in projects_dir.iterdir():
         if not project_dir.is_dir():
             continue
         if worktree_name not in project_dir.name:
             continue
-        # Find all JSONL files (orchestrator + subagents)
         for jsonl in project_dir.rglob("*.jsonl"):
             results.append(jsonl)
-
     return sorted(results)
 
 
-def parse_transcript(path: Path) -> dict[str, dict[str, int]]:
-    """Parse a JSONL transcript and return token counts by model."""
+def parse_transcript(
+    path: Path,
+    since: datetime | None = None,
+) -> dict[str, dict[str, int]]:
+    """Parse a JSONL transcript and return token counts by model.
+
+    If `since` is set, only count entries with a timestamp >= since.
+    """
     counts: dict[str, dict[str, int]] = {}
 
     try:
@@ -69,13 +96,25 @@ def parse_transcript(path: Path) -> dict[str, dict[str, int]]:
                 if entry.get("type") != "assistant":
                     continue
 
+                # Filter by timestamp if --since is used
+                if since:
+                    ts_str = entry.get("timestamp")
+                    if ts_str:
+                        try:
+                            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                            if ts < since:
+                                continue
+                        except (ValueError, TypeError):
+                            continue
+                    else:
+                        continue
+
                 msg = entry.get("message", {})
                 usage = msg.get("usage")
                 if not usage:
                     continue
 
                 model: str = msg.get("model") or "unknown"
-                # Normalize model name
                 model = MODEL_ALIASES.get(model, model)
 
                 if model not in counts:
@@ -104,7 +143,6 @@ def estimate_cost(model: str, counts: dict[str, int]) -> float:
     """Estimate cost in USD for a model's token usage."""
     pricing = PRICING.get(model)
     if not pricing:
-        # Try prefix match
         for key, val in PRICING.items():
             if model.startswith(key.rsplit("-", 1)[0]):
                 pricing = val
@@ -120,48 +158,8 @@ def estimate_cost(model: str, counts: dict[str, int]) -> float:
     return cost
 
 
-def main() -> None:
-    if len(sys.argv) < 2:
-        print("Usage: python3 count-tokens.py <worktree-name>", file=sys.stderr)
-        sys.exit(1)
-
-    worktree_name = sys.argv[1]
-    transcripts = find_transcripts(worktree_name)
-
-    if not transcripts:
-        print(json.dumps({"error": f"No transcripts found for {worktree_name}"}))
-        sys.exit(1)
-
-    # Aggregate across all transcripts
-    all_counts: dict[str, dict[str, int]] = {}
-    transcript_details = []
-
-    for t in transcripts:
-        counts = parse_transcript(t)
-        # Determine if this is the orchestrator or a subagent
-        is_subagent = "subagents" in str(t)
-        label = f"subagent:{t.stem}" if is_subagent else "orchestrator"
-
-        detail_models: dict[str, dict] = {}  # type: ignore[type-arg]
-
-        for model, mc in counts.items():
-            if model not in all_counts:
-                all_counts[model] = {
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "cache_read_input_tokens": 0,
-                    "cache_creation_input_tokens": 0,
-                    "api_calls": 0,
-                }
-            for key in all_counts[model]:
-                all_counts[model][key] += mc[key]
-
-            cost = estimate_cost(model, mc)
-            detail_models[model] = {**mc, "cost_usd": round(cost, 4)}
-
-        transcript_details.append({"file": str(t), "label": label, "models": detail_models})
-
-    # Build summary
+def build_result(label: str, all_counts: dict[str, dict[str, int]]) -> dict:
+    """Build the summary result dict."""
     total_input = sum(c["input_tokens"] for c in all_counts.values())
     total_output = sum(c["output_tokens"] for c in all_counts.values())
     total_cache_read = sum(c["cache_read_input_tokens"] for c in all_counts.values())
@@ -169,9 +167,8 @@ def main() -> None:
     total_calls = sum(c["api_calls"] for c in all_counts.values())
     total_cost = sum(estimate_cost(m, c) for m, c in all_counts.items())
 
-    result = {
-        "worktree": worktree_name,
-        "transcripts_found": len(transcripts),
+    return {
+        "scope": label,
         "summary": {
             "input_tokens": total_input,
             "output_tokens": total_output,
@@ -185,10 +182,89 @@ def main() -> None:
             model: {**counts, "cost_usd": round(estimate_cost(model, counts), 4)}
             for model, counts in sorted(all_counts.items())
         },
-        "by_transcript": transcript_details,
     }
 
-    print(json.dumps(result, indent=2))
+
+def main() -> None:
+    args = sys.argv[1:]
+
+    if "--since" in args:
+        idx = args.index("--since")
+        if idx + 1 >= len(args):
+            print("Usage: python3 count-tokens.py --since <ISO-timestamp>", file=sys.stderr)
+            sys.exit(1)
+        since_str = args[idx + 1]
+        try:
+            since = datetime.fromisoformat(since_str.replace("Z", "+00:00"))
+            if since.tzinfo is None:
+                since = since.replace(tzinfo=timezone.utc)
+        except ValueError:
+            print(f"Invalid timestamp: {since_str}", file=sys.stderr)
+            sys.exit(1)
+
+        transcripts = find_current_transcripts()
+        if not transcripts:
+            print(json.dumps({"error": "No transcripts found"}))
+            sys.exit(1)
+
+        all_counts: dict[str, dict[str, int]] = {}
+        for t in transcripts:
+            # Only check recent transcripts (modified after since)
+            try:
+                if datetime.fromtimestamp(t.stat().st_mtime, tz=timezone.utc) < since:
+                    continue
+            except OSError:
+                continue
+
+            counts = parse_transcript(t, since=since)
+            for model, mc in counts.items():
+                if model not in all_counts:
+                    all_counts[model] = {
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                        "cache_creation_input_tokens": 0,
+                        "api_calls": 0,
+                    }
+                for key in all_counts[model]:
+                    all_counts[model][key] += mc[key]
+
+        result = build_result(f"since {since_str}", all_counts)
+        print(json.dumps(result, indent=2))
+
+    elif "--worktree" in args:
+        idx = args.index("--worktree")
+        if idx + 1 >= len(args):
+            print("Usage: python3 count-tokens.py --worktree <name>", file=sys.stderr)
+            sys.exit(1)
+        wt_name = args[idx + 1]
+        transcripts = find_worktree_transcripts(wt_name)
+        if not transcripts:
+            print(json.dumps({"error": f"No transcripts found for {wt_name}"}))
+            sys.exit(1)
+
+        all_counts = {}
+        for t in transcripts:
+            counts = parse_transcript(t)
+            for model, mc in counts.items():
+                if model not in all_counts:
+                    all_counts[model] = {
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                        "cache_creation_input_tokens": 0,
+                        "api_calls": 0,
+                    }
+                for key in all_counts[model]:
+                    all_counts[model][key] += mc[key]
+
+        result = build_result(f"worktree:{wt_name}", all_counts)
+        print(json.dumps(result, indent=2))
+
+    else:
+        print("Usage: python3 count-tokens.py --since <ISO-timestamp>", file=sys.stderr)
+        print("       python3 count-tokens.py --worktree <name>", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
