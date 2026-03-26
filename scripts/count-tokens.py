@@ -8,7 +8,7 @@ Usage:
     python3 count-tokens.py --since 2026-03-26T14:00:00
     python3 count-tokens.py --worktree <worktree-name>   (legacy mode)
 
-Output: JSON with per-model and total token counts + estimated cost.
+Output: JSON with per-model and total token counts.
 """
 
 import json
