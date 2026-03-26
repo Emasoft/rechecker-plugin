@@ -31,6 +31,7 @@ def main() -> None:
     parser.add_argument("--commit", required=True)
     parser.add_argument("--start", required=True, help="ISO timestamp of session start")
     parser.add_argument("--report-dir", required=True, help="Temp report directory")
+    parser.add_argument("--snapshot", required=True, help="Path to before-snapshot JSON from count-tokens.py")
     parser.add_argument("--files-reviewed", type=int, default=0)
     parser.add_argument("--issues-found", type=int, default=0)
     parser.add_argument("--issues-fixed", type=int, default=0)
@@ -40,15 +41,15 @@ def main() -> None:
     rechecker_dir = Path(".rechecker")
     rechecker_dir.mkdir(exist_ok=True)
 
-    # 1. Count tokens (scoped to [start, now] window)
+    # 1. Count tokens via delta (snapshot before vs now)
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", str(Path(__file__).parent.parent))
     count_script = Path(plugin_root) / "scripts" / "count-tokens.py"
     end_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     token_data = {}
-    if count_script.exists():
+    if count_script.exists() and Path(args.snapshot).exists():
         result = subprocess.run(
-            [sys.executable, str(count_script), "--since", args.start, "--until", end_ts],
-            capture_output=True, text=True, timeout=30,
+            [sys.executable, str(count_script), "--delta", args.snapshot],
+            capture_output=True, text=True, timeout=60,
         )
         if result.returncode == 0:
             try:

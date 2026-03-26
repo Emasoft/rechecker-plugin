@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""count-tokens.py — Count tokens used in a time window or a worktree session.
+"""count-tokens.py — Count tokens via delta snapshots.
 
-Parses Claude Code JSONL transcript files to produce a token breakdown by model.
+Takes two snapshots of cumulative session token usage (before and after),
+then computes the difference to get exact consumption for a specific operation.
 
 Usage:
-    python3 count-tokens.py --since <ISO-timestamp>
-    python3 count-tokens.py --since 2026-03-26T14:00:00
-    python3 count-tokens.py --worktree <worktree-name>   (legacy mode)
+    python3 count-tokens.py --snapshot <output-file>   # save current totals
+    python3 count-tokens.py --delta <before-file>      # print delta since snapshot
 
 Output: JSON with per-model and total token counts.
 """
 
 import json
+import mmap as mmap_mod
 import os
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 MODEL_ALIASES = {
@@ -22,70 +22,43 @@ MODEL_ALIASES = {
     "claude-sonnet-4-6[1m]": "claude-sonnet-4-6",
 }
 
+TOKEN_KEYS = [
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+    "api_calls",
+]
+
 
 def find_current_transcripts() -> list[Path]:
-    """Find JSONL transcripts for the current project only.
-
-    Uses CLAUDE_PROJECT_DIR env var to identify the project,
-    then looks for the matching encoded project dir under ~/.claude/projects/.
-    """
+    """Find JSONL transcripts for the current project only."""
     projects_dir = Path.home() / ".claude" / "projects"
     if not projects_dir.is_dir():
         return []
-
-    # Scope to the current project by matching the encoded CWD in the dir name
     project_dir_hint = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
-    # Claude encodes paths as -Users-foo-bar (dashes replace slashes)
     encoded_hint = project_dir_hint.replace("/", "-").lstrip("-")
-
     results = []
     for project_dir in projects_dir.iterdir():
         if not project_dir.is_dir():
             continue
-        # Only match dirs that contain our project path encoding
         if encoded_hint not in project_dir.name:
             continue
         for jsonl in project_dir.rglob("*.jsonl"):
             results.append(jsonl)
-    return sorted(results, key=lambda p: p.stat().st_mtime, reverse=True)
+    return results
 
 
-def find_worktree_transcripts(worktree_name: str) -> list[Path]:
-    """Find JSONL transcripts for a specific worktree."""
-    projects_dir = Path.home() / ".claude" / "projects"
-    if not projects_dir.is_dir():
-        return []
-    results = []
-    for project_dir in projects_dir.iterdir():
-        if not project_dir.is_dir():
-            continue
-        if worktree_name not in project_dir.name:
-            continue
-        for jsonl in project_dir.rglob("*.jsonl"):
-            results.append(jsonl)
-    return sorted(results)
+def parse_transcript_cumulative(path: Path) -> dict[str, dict[str, int]]:
+    """Sum ALL usage entries in a transcript. No timestamp filtering.
 
-
-def parse_transcript(
-    path: Path,
-    since: datetime | None = None,
-    until: datetime | None = None,
-) -> dict[str, dict[str, int]]:
-    """Parse a JSONL transcript and return token counts by model.
-
-    Uses mmap for zero-copy, OS-managed paging — same technique as the PSS
-    Rust binary. Never loads the full file into memory. For each line:
-    1. Peek at first 512 bytes for '"usage"' substring
-    2. Skip multi-MB screenshot/base64 lines without reading them
-    3. Only json.loads lines that pass the pre-filter
+    Uses mmap with 512-byte peek to skip multi-MB screenshot lines.
     """
-    import mmap as mmap_mod
-
     counts: dict[str, dict[str, int]] = {}
     PEEK = 512
 
     try:
-        f = open(path, "rb")  # noqa: SIM115 — kept open alongside mmap
+        f = open(path, "rb")  # noqa: SIM115
     except OSError:
         return counts
 
@@ -103,7 +76,6 @@ def parse_transcript(
     try:
         pos = 0
         while pos < size:
-            # Find next newline
             nl = mm.find(b"\n", pos)
             if nl == -1:
                 nl = size
@@ -114,14 +86,12 @@ def parse_transcript(
             if line_len < 20:
                 continue
 
-            # Peek at first PEEK bytes — "usage" appears early in assistant entries
             peek_end = min(line_start + PEEK, line_start + line_len)
             peek = mm[line_start:peek_end]
 
             if b'"usage"' not in peek:
                 continue
 
-            # Pre-filter passed — read the full line and parse
             line_bytes = mm[line_start:line_start + line_len]
             try:
                 entry = json.loads(line_bytes)
@@ -130,21 +100,6 @@ def parse_transcript(
 
             if entry.get("type") != "assistant":
                 continue
-
-            # Filter by timestamp window
-            if since or until:
-                ts_str = entry.get("timestamp")
-                if ts_str:
-                    try:
-                        ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-                        if since and ts < since:
-                            continue
-                        if until and ts > until:
-                            continue
-                    except (ValueError, TypeError):
-                        continue
-                else:
-                    continue
 
             msg = entry.get("message", {})
             usage = msg.get("usage")
@@ -155,20 +110,11 @@ def parse_transcript(
             model = MODEL_ALIASES.get(model, model)
 
             if model not in counts:
-                counts[model] = {
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "cache_read_input_tokens": 0,
-                    "cache_creation_input_tokens": 0,
-                    "api_calls": 0,
-                }
+                counts[model] = {k: 0 for k in TOKEN_KEYS}
 
             c = counts[model]
-            c["input_tokens"] += usage.get("input_tokens", 0)
-            c["output_tokens"] += usage.get("output_tokens", 0)
-            c["cache_read_input_tokens"] += usage.get("cache_read_input_tokens", 0)
-            c["cache_creation_input_tokens"] += usage.get("cache_creation_input_tokens", 0)
-            c["api_calls"] += 1
+            for k in TOKEN_KEYS:
+                c[k] += usage.get(k, 0)
     finally:
         mm.close()
         f.close()
@@ -176,141 +122,107 @@ def parse_transcript(
     return counts
 
 
-def build_result(label: str, all_counts: dict[str, dict[str, int]]) -> dict:
-    """Build the summary result dict."""
-    total_input = sum(c["input_tokens"] for c in all_counts.values())
-    total_output = sum(c["output_tokens"] for c in all_counts.values())
-    total_cache_read = sum(c["cache_read_input_tokens"] for c in all_counts.values())
-    total_cache_create = sum(c["cache_creation_input_tokens"] for c in all_counts.values())
-    total_calls = sum(c["api_calls"] for c in all_counts.values())
+def aggregate_all() -> dict[str, dict[str, int]]:
+    """Sum usage across all transcripts for the current project."""
+    all_counts: dict[str, dict[str, int]] = {}
+    for t in find_current_transcripts():
+        counts = parse_transcript_cumulative(t)
+        for model, mc in counts.items():
+            if model not in all_counts:
+                all_counts[model] = {k: 0 for k in TOKEN_KEYS}
+            for k in TOKEN_KEYS:
+                all_counts[model][k] += mc[k]
+    return all_counts
 
+
+def build_summary(all_counts: dict[str, dict[str, int]]) -> dict:
+    """Build a flat summary dict from per-model counts."""
+    summary: dict[str, int] = {k: 0 for k in TOKEN_KEYS}
+    for mc in all_counts.values():
+        for k in TOKEN_KEYS:
+            summary[k] += mc[k]
+    summary["total_tokens"] = (
+        summary["input_tokens"]
+        + summary["output_tokens"]
+        + summary["cache_read_input_tokens"]
+        + summary["cache_creation_input_tokens"]
+    )
     return {
-        "scope": label,
-        "summary": {
-            "input_tokens": total_input,
-            "output_tokens": total_output,
-            "cache_read_tokens": total_cache_read,
-            "cache_create_tokens": total_cache_create,
-            "total_tokens": total_input + total_output + total_cache_read + total_cache_create,
-            "api_calls": total_calls,
-        },
-        "by_model": {
-            model: dict(counts)
-            for model, counts in sorted(all_counts.items())
-        },
+        "summary": summary,
+        "by_model": {m: dict(c) for m, c in sorted(all_counts.items())},
     }
+
+
+def compute_delta(
+    before: dict[str, dict[str, int]],
+    after: dict[str, dict[str, int]],
+) -> dict[str, dict[str, int]]:
+    """Subtract before from after to get the delta per model."""
+    delta: dict[str, dict[str, int]] = {}
+    all_models = set(after.keys()) | set(before.keys())
+    for model in all_models:
+        a = after.get(model, {k: 0 for k in TOKEN_KEYS})
+        b = before.get(model, {k: 0 for k in TOKEN_KEYS})
+        d = {k: a.get(k, 0) - b.get(k, 0) for k in TOKEN_KEYS}
+        # Only include models with positive delta
+        if any(v > 0 for v in d.values()):
+            delta[model] = d
+    return delta
 
 
 def main() -> None:
     args = sys.argv[1:]
 
     if not args or "--help" in args or "-h" in args:
-        print("Count tokens used in a time window or worktree session.")
+        print("Count tokens via delta snapshots.")
         print()
         print("Usage:")
-        print("  python3 count-tokens.py --since <ISO-timestamp> [--until <ISO-timestamp>]")
-        print("  python3 count-tokens.py --worktree <name>")
+        print("  python3 count-tokens.py --snapshot <output-file>")
+        print("  python3 count-tokens.py --delta <before-file>")
         print()
-        print("Options:")
-        print("  --since <ts>     Count tokens from API calls after this timestamp")
-        print("  --until <ts>     Count tokens from API calls before this timestamp")
-        print("  --worktree <name>  Count tokens from a specific worktree session")
-        print("  -h, --help       Show this help")
+        print("Workflow:")
+        print("  1. Take a snapshot before the operation:")
+        print("     python3 count-tokens.py --snapshot /tmp/before.json")
+        print("  2. Run the operation (recheck, etc.)")
+        print("  3. Compute the delta:")
+        print("     python3 count-tokens.py --delta /tmp/before.json")
+        print("     → prints JSON with tokens consumed by the operation")
         sys.exit(0)
 
-    if "--since" in args:
-        idx = args.index("--since")
+    if "--snapshot" in args:
+        idx = args.index("--snapshot")
         if idx + 1 >= len(args):
-            print("Usage: python3 count-tokens.py --since <ISO-timestamp>", file=sys.stderr)
+            print("--snapshot requires an output file path", file=sys.stderr)
             sys.exit(1)
-        since_str = args[idx + 1]
+        out_path = args[idx + 1]
+        all_counts = aggregate_all()
+        with open(out_path, "w") as f:
+            json.dump({"by_model": {m: dict(c) for m, c in all_counts.items()}}, f)
+        print(json.dumps({"status": "snapshot saved", "file": out_path}))
+
+    elif "--delta" in args:
+        idx = args.index("--delta")
+        if idx + 1 >= len(args):
+            print("--delta requires the before-snapshot file path", file=sys.stderr)
+            sys.exit(1)
+        before_path = args[idx + 1]
         try:
-            since = datetime.fromisoformat(since_str.replace("Z", "+00:00"))
-            if since.tzinfo is None:
-                since = since.replace(tzinfo=timezone.utc)
-        except ValueError:
-            print(f"Invalid timestamp: {since_str}", file=sys.stderr)
+            with open(before_path) as f:
+                before_data = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            print(json.dumps({"error": f"Failed to read before-snapshot: {e}"}))
             sys.exit(1)
 
-        until: datetime | None = None
-        if "--until" in args:
-            u_idx = args.index("--until")
-            if u_idx + 1 >= len(args):
-                print("--until requires a timestamp argument", file=sys.stderr)
-                sys.exit(1)
-            try:
-                until = datetime.fromisoformat(args[u_idx + 1].replace("Z", "+00:00"))
-                if until.tzinfo is None:
-                    until = until.replace(tzinfo=timezone.utc)
-            except ValueError:
-                print(f"Invalid --until timestamp: {args[u_idx + 1]}", file=sys.stderr)
-                sys.exit(1)
-
-        transcripts = find_current_transcripts()
-        if not transcripts:
-            print(json.dumps({"error": "No transcripts found"}))
-            sys.exit(1)
-
-        all_counts: dict[str, dict[str, int]] = {}
-        for t in transcripts:
-            # Only check recent transcripts (modified after since)
-            try:
-                if datetime.fromtimestamp(t.stat().st_mtime, tz=timezone.utc) < since:
-                    continue
-            except OSError:
-                continue
-
-            counts = parse_transcript(t, since=since, until=until)
-            for model, mc in counts.items():
-                if model not in all_counts:
-                    all_counts[model] = {
-                        "input_tokens": 0,
-                        "output_tokens": 0,
-                        "cache_read_input_tokens": 0,
-                        "cache_creation_input_tokens": 0,
-                        "api_calls": 0,
-                    }
-                for key in all_counts[model]:
-                    all_counts[model][key] += mc[key]
-
-        label = f"since {since_str}"
-        if until:
-            label += f" until {args[args.index('--until') + 1]}"
-        result = build_result(label, all_counts)
-        print(json.dumps(result, indent=2))
-
-    elif "--worktree" in args:
-        idx = args.index("--worktree")
-        if idx + 1 >= len(args):
-            print("Usage: python3 count-tokens.py --worktree <name>", file=sys.stderr)
-            sys.exit(1)
-        wt_name = args[idx + 1]
-        transcripts = find_worktree_transcripts(wt_name)
-        if not transcripts:
-            print(json.dumps({"error": f"No transcripts found for {wt_name}"}))
-            sys.exit(1)
-
-        all_counts = {}
-        for t in transcripts:
-            counts = parse_transcript(t)
-            for model, mc in counts.items():
-                if model not in all_counts:
-                    all_counts[model] = {
-                        "input_tokens": 0,
-                        "output_tokens": 0,
-                        "cache_read_input_tokens": 0,
-                        "cache_creation_input_tokens": 0,
-                        "api_calls": 0,
-                    }
-                for key in all_counts[model]:
-                    all_counts[model][key] += mc[key]
-
-        result = build_result(f"worktree:{wt_name}", all_counts)
+        before_counts = before_data.get("by_model", {})
+        after_counts = aggregate_all()
+        delta = compute_delta(before_counts, after_counts)
+        result = build_summary(delta)
+        result["scope"] = "delta"
         print(json.dumps(result, indent=2))
 
     else:
-        print("Usage: python3 count-tokens.py --since <ISO-timestamp>", file=sys.stderr)
-        print("       python3 count-tokens.py --worktree <name>", file=sys.stderr)
+        print("Usage: python3 count-tokens.py --snapshot <file>", file=sys.stderr)
+        print("       python3 count-tokens.py --delta <before-file>", file=sys.stderr)
         sys.exit(1)
 
 
