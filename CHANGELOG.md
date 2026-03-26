@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [3.2.2] - 2026-03-26
 
 ### Bug Fixes
 
@@ -11,6 +11,10 @@ All notable changes to this project will be documented in this file.
 ### Documentation
 
 - Clarify ensemble mode is mandatory — dual-model review increases bug detection by 35%
+
+### Miscellaneous Tasks
+
+- Bump version to 3.2.2
 ## [3.2.1] - 2026-03-26
 
 ### Bug Fixes
