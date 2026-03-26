@@ -47,13 +47,21 @@ If no code files remain after filtering, stop — nothing to review.
 
 ## Step 2: Setup session
 
-Generate a unique session ID, record the start timestamp, the commit hash, create the report folder, and **take a token snapshot** (used later to compute exact token consumption via delta).
+Generate a unique session ID, record the start timestamp, the commit hash, and create the report folder.
 
 **Remember all printed values** — you will need them literally in every subsequent step (shell variables do not persist across separate tool calls).
 
 ```bash
-RCK_UUID=$(python3 -c "import uuid; print(uuid.uuid4().hex[:12])") && RCK_START_TS=$(date -u +%Y-%m-%dT%H:%M:%S) && RCK_COMMIT=$(git rev-parse HEAD) && REPORT_DIR="reports_dev/rck-${RCK_UUID}" && RCK_SNAPSHOT="reports_dev/rck-${RCK_UUID}/before-tokens.json" && mkdir -p "$REPORT_DIR" && python3 "${CLAUDE_PLUGIN_ROOT}/scripts/count-tokens.py" --snapshot "$RCK_SNAPSHOT" && echo "RCK_UUID=$RCK_UUID RCK_START_TS=$RCK_START_TS RCK_COMMIT=$RCK_COMMIT REPORT_DIR=$REPORT_DIR RCK_SNAPSHOT=$RCK_SNAPSHOT"
+RCK_UUID=$(python3 -c "import uuid; print(uuid.uuid4().hex[:12])") && RCK_START_TS=$(date -u +%Y-%m-%dT%H:%M:%S) && RCK_COMMIT=$(git rev-parse HEAD) && REPORT_DIR="reports_dev/rck-${RCK_UUID}" && mkdir -p "$REPORT_DIR" && echo "RCK_UUID=$RCK_UUID RCK_START_TS=$RCK_START_TS RCK_COMMIT=$RCK_COMMIT REPORT_DIR=$REPORT_DIR"
 ```
+
+Then, in a **separate Bash call** (this guarantees the transcript contains the latest API usage from the tool call above), take a token snapshot:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/count-tokens.py" --snapshot "$REPORT_DIR/before-tokens.json"
+```
+
+Note the snapshot path: `$REPORT_DIR/before-tokens.json` — you will pass it to the finalize script later as `$RCK_SNAPSHOT`.
 
 ## Step 3: Lint pass
 
