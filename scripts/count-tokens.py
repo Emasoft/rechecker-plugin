@@ -4,12 +4,9 @@
 Takes two snapshots of cumulative session token usage (before and after),
 then computes the difference to get exact consumption for a specific operation.
 
-Extracts token usage from JSONL transcripts WITHOUT json.loads — uses regex
-on raw bytes to extract only the fields needed (type, requestId, model, usage).
-This avoids allocating full Python dicts for lines that can be 500KB+.
-
-Uses mmap for zero-copy streaming — handles 2GB+ transcripts with screenshots.
-Lines over 1MB are skipped (screenshot/base64 blobs).
+Streaming-only: reads only the last 1200 bytes of each JSONL line to extract
+token usage. Never loads full lines into memory. Uses mmap for zero-copy access.
+Handles 2GB+ transcripts with multi-MB screenshot lines.
 
 Usage:
     python3 count-tokens.py --snapshot <output-file>   # save current totals
@@ -38,16 +35,19 @@ TOKEN_KEYS = [
     "api_calls",
 ]
 
-# Lines over 1MB are screenshot/base64 blobs — skip without reading
-SKIP_THRESHOLD = 1_000_000
+# Tail size: usage block is 604-850 bytes from end, requestId 363-558 from end,
+# model ~812 from end when near usage. 1200 bytes covers all with margin.
+TAIL_SIZE = 1200
 
-# Regex patterns to extract fields from raw JSONL bytes without full JSON parsing.
-# These match the top-level fields in Claude Code JSONL entries.
-# "type":"assistant" appears near the start of each line.
-_RE_TYPE = re.compile(rb'"type"\s*:\s*"(assistant)"')
+# Lines over 2MB are screenshot/base64 blobs — skip entirely
+SKIP_THRESHOLD = 2_000_000
+
+# Head size: check for "assistant" type in first 200 bytes (covers most entries)
+HEAD_SIZE = 200
+
+# Regex patterns for extracting fields from the tail region
 _RE_REQUEST_ID = re.compile(rb'"requestId"\s*:\s*"([^"]+)"')
 _RE_MODEL = re.compile(rb'"model"\s*:\s*"([^"]+)"')
-# Usage block: extract each token field individually to avoid parsing the object
 _RE_INPUT = re.compile(rb'"input_tokens"\s*:\s*(\d+)')
 _RE_OUTPUT = re.compile(rb'"output_tokens"\s*:\s*(\d+)')
 _RE_CACHE_READ = re.compile(rb'"cache_read_input_tokens"\s*:\s*(\d+)')
@@ -55,11 +55,7 @@ _RE_CACHE_CREATE = re.compile(rb'"cache_creation_input_tokens"\s*:\s*(\d+)')
 
 
 def find_current_transcripts() -> list[Path]:
-    """Find JSONL transcripts for the current project only.
-
-    Matches the exact encoded project path as the directory name,
-    NOT as a substring — avoids matching worktree project dirs.
-    """
+    """Find JSONL transcripts for the current project only."""
     projects_dir = Path.home() / ".claude" / "projects"
     if not projects_dir.is_dir():
         return []
@@ -79,8 +75,8 @@ def find_current_transcripts() -> list[Path]:
 def _parse_entries(path: Path) -> list[dict]:
     """Extract assistant entries with usage from a single JSONL file.
 
-    Uses regex on raw bytes — never calls json.loads.
-    Returns a list of dicts with: request_id, model, usage counts.
+    Reads only head (200 bytes) + tail (1200 bytes) of each line.
+    Never loads full lines. Uses regex on raw bytes — no json.loads.
     """
     entries: list[dict] = []
 
@@ -110,33 +106,46 @@ def _parse_entries(path: Path) -> list[dict]:
             line_len = nl - pos
             pos = nl + 1
 
-            if line_len < 20 or line_len > SKIP_THRESHOLD:
+            if line_len < 100 or line_len > SKIP_THRESHOLD:
                 continue
 
-            line_bytes = mm[line_start:line_start + line_len]
+            # Read head to check for "assistant" type
+            head_end = min(line_start + HEAD_SIZE, line_start + line_len)
+            head = mm[line_start:head_end]
 
-            # Must be type "assistant" (regex matches the top-level type field)
-            if not _RE_TYPE.search(line_bytes):
-                continue
+            # For lines where "type":"assistant" is past HEAD_SIZE (up to 72K),
+            # we check the tail instead — the "stop_reason" field is only in
+            # assistant entries and always appears near the usage block
+            is_assistant = b'"assistant"' in head
 
-            # Must have at least one token count field
-            m_input = _RE_INPUT.search(line_bytes)
+            # Read the tail (last 1200 bytes) where usage data lives
+            tail_start = max(line_start, line_start + line_len - TAIL_SIZE)
+            tail = mm[tail_start:line_start + line_len]
+
+            # If head didn't confirm assistant, check tail for stop_reason
+            # (only assistant entries have stop_reason + usage)
+            if not is_assistant:
+                if b'"stop_reason"' not in tail:
+                    continue
+
+            # Must have input_tokens in the tail
+            m_input = _RE_INPUT.search(tail)
             if not m_input:
                 continue
 
-            # Extract all token fields
+            # Extract all token fields from tail
             input_tokens = int(m_input.group(1))
-            m_output = _RE_OUTPUT.search(line_bytes)
+            m_output = _RE_OUTPUT.search(tail)
             output_tokens = int(m_output.group(1)) if m_output else 0
-            m_cache_read = _RE_CACHE_READ.search(line_bytes)
+            m_cache_read = _RE_CACHE_READ.search(tail)
             cache_read = int(m_cache_read.group(1)) if m_cache_read else 0
-            m_cache_create = _RE_CACHE_CREATE.search(line_bytes)
+            m_cache_create = _RE_CACHE_CREATE.search(tail)
             cache_create = int(m_cache_create.group(1)) if m_cache_create else 0
 
-            # Extract requestId and model
-            m_rid = _RE_REQUEST_ID.search(line_bytes)
+            # Extract requestId and model from tail
+            m_rid = _RE_REQUEST_ID.search(tail)
             request_id = m_rid.group(1).decode("utf-8", errors="replace") if m_rid else None
-            m_model = _RE_MODEL.search(line_bytes)
+            m_model = _RE_MODEL.search(tail)
             model = m_model.group(1).decode("utf-8", errors="replace") if m_model else "unknown"
 
             entries.append({
@@ -155,11 +164,7 @@ def _parse_entries(path: Path) -> list[dict]:
 
 
 def _deduplicate_by_request_id(entries: list[dict]) -> list[dict]:
-    """Deduplicate streaming entries by requestId — keep only the last per ID.
-
-    Exact replication of claude-devtools deduplicateByRequestId().
-    Entries without requestId pass through unchanged.
-    """
+    """Deduplicate streaming entries by requestId — keep only the last per ID."""
     last_index_by_rid: dict[str, int] = {}
     for i, e in enumerate(entries):
         rid = e["request_id"]
@@ -242,16 +247,13 @@ def main() -> None:
         print("  python3 count-tokens.py --snapshot <output-file>")
         print("  python3 count-tokens.py --delta <before-file>")
         print()
-        print("Parsing: regex extraction (no json.loads), requestId dedup,")
-        print("mmap streaming, lines >1MB skipped.")
+        print("Streaming: reads only head (200B) + tail (1200B) of each line.")
+        print("No json.loads. mmap zero-copy. Lines >2MB skipped.")
         print()
         print("Workflow:")
-        print("  1. Take a snapshot before the operation:")
-        print("     python3 count-tokens.py --snapshot /tmp/before.json")
-        print("  2. Run the operation (recheck, etc.)")
-        print("  3. Compute the delta:")
-        print("     python3 count-tokens.py --delta /tmp/before.json")
-        print("     -> prints JSON with tokens consumed by the operation")
+        print("  1. python3 count-tokens.py --snapshot /tmp/before.json")
+        print("  2. <run operation>")
+        print("  3. python3 count-tokens.py --delta /tmp/before.json")
         sys.exit(0)
 
     if "--snapshot" in args:
