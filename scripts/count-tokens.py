@@ -72,14 +72,6 @@ def find_worktree_transcripts(worktree_name: str) -> list[Path]:
     return sorted(results)
 
 
-def _skip_to_next_line(f) -> None:  # type: ignore[no-untyped-def]
-    """Consume bytes until the next newline without buffering the whole line."""
-    while True:
-        chunk = f.readline(65536)
-        if not chunk or chunk.endswith("\n"):
-            break
-
-
 def parse_transcript(
     path: Path,
     since: datetime | None = None,
@@ -87,95 +79,98 @@ def parse_transcript(
 ) -> dict[str, dict[str, int]]:
     """Parse a JSONL transcript and return token counts by model.
 
-    Memory-safe: peeks at the first 4KB of each line to check for "usage".
-    Lines with screenshots/base64 can be 50MB+ — they are skipped without
-    ever being fully read into memory.
+    Uses mmap for zero-copy, OS-managed paging — same technique as the PSS
+    Rust binary. Never loads the full file into memory. For each line:
+    1. Peek at first 512 bytes for '"usage"' substring
+    2. Skip multi-MB screenshot/base64 lines without reading them
+    3. Only json.loads lines that pass the pre-filter
     """
+    import mmap as mmap_mod
+
     counts: dict[str, dict[str, int]] = {}
-    # Peek size: 4KB is enough to find "type", "timestamp", and "usage" fields
-    # which appear early in the JSON. Screenshot base64 data comes later.
-    PEEK = 4096
+    PEEK = 512
 
     try:
-        with open(path, encoding="utf-8", errors="replace") as f:
-            while True:
-                peek = f.readline(PEEK)
-                if not peek:
-                    break
-
-                # If the line is longer than PEEK, we only got a prefix.
-                # Check if "usage" appears in the prefix — if not, skip the rest.
-                is_partial = not peek.endswith("\n")
-
-                if '"usage"' not in peek:
-                    if is_partial:
-                        _skip_to_next_line(f)
-                    continue
-
-                # "usage" found in prefix — read the rest of the line if partial
-                if is_partial:
-                    rest = []
-                    while True:
-                        chunk = f.readline(65536)
-                        rest.append(chunk)
-                        if not chunk or chunk.endswith("\n"):
-                            break
-                    line = peek + "".join(rest)
-                else:
-                    line = peek
-
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-                if entry.get("type") != "assistant":
-                    continue
-
-                # Filter by timestamp window
-                if since or until:
-                    ts_str = entry.get("timestamp")
-                    if ts_str:
-                        try:
-                            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-                            if since and ts < since:
-                                continue
-                            if until and ts > until:
-                                continue
-                        except (ValueError, TypeError):
-                            continue
-                    else:
-                        continue
-
-                msg = entry.get("message", {})
-                usage = msg.get("usage")
-                if not usage:
-                    continue
-
-                model: str = msg.get("model") or "unknown"
-                model = MODEL_ALIASES.get(model, model)
-
-                if model not in counts:
-                    counts[model] = {
-                        "input_tokens": 0,
-                        "output_tokens": 0,
-                        "cache_read_input_tokens": 0,
-                        "cache_creation_input_tokens": 0,
-                        "api_calls": 0,
-                    }
-
-                c = counts[model]
-                c["input_tokens"] += usage.get("input_tokens", 0)
-                c["output_tokens"] += usage.get("output_tokens", 0)
-                c["cache_read_input_tokens"] += usage.get("cache_read_input_tokens", 0)
-                c["cache_creation_input_tokens"] += usage.get("cache_creation_input_tokens", 0)
-                c["api_calls"] += 1
-
+        with open(path, "rb") as f:
+            size = f.seek(0, 2)
+            if size == 0:
+                return counts
+            f.seek(0)
+            mm = mmap_mod.mmap(f.fileno(), 0, access=mmap_mod.ACCESS_READ)
     except OSError:
-        pass
+        return counts
+
+    try:
+        pos = 0
+        while pos < size:
+            # Find next newline
+            nl = mm.find(b"\n", pos)
+            if nl == -1:
+                nl = size
+            line_start = pos
+            line_len = nl - pos
+            pos = nl + 1
+
+            if line_len < 20:
+                continue
+
+            # Peek at first PEEK bytes — "usage" appears early in assistant entries
+            peek_end = min(line_start + PEEK, line_start + line_len)
+            peek = mm[line_start:peek_end]
+
+            if b'"usage"' not in peek:
+                continue
+
+            # Pre-filter passed — read the full line and parse
+            line_bytes = mm[line_start:line_start + line_len]
+            try:
+                entry = json.loads(line_bytes)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                continue
+
+            if entry.get("type") != "assistant":
+                continue
+
+            # Filter by timestamp window
+            if since or until:
+                ts_str = entry.get("timestamp")
+                if ts_str:
+                    try:
+                        ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                        if since and ts < since:
+                            continue
+                        if until and ts > until:
+                            continue
+                    except (ValueError, TypeError):
+                        continue
+                else:
+                    continue
+
+            msg = entry.get("message", {})
+            usage = msg.get("usage")
+            if not usage:
+                continue
+
+            model: str = msg.get("model") or "unknown"
+            model = MODEL_ALIASES.get(model, model)
+
+            if model not in counts:
+                counts[model] = {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0,
+                    "api_calls": 0,
+                }
+
+            c = counts[model]
+            c["input_tokens"] += usage.get("input_tokens", 0)
+            c["output_tokens"] += usage.get("output_tokens", 0)
+            c["cache_read_input_tokens"] += usage.get("cache_read_input_tokens", 0)
+            c["cache_creation_input_tokens"] += usage.get("cache_creation_input_tokens", 0)
+            c["api_calls"] += 1
+    finally:
+        mm.close()
 
     return counts
 
