@@ -6,7 +6,29 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Sync README badge to v3.0.0
+
+### Features
+
+- V3.0.0 — replace async worktree architecture with blocking /recheck skill
+- V3 recheck skill — 3+1 pass pipeline, opus for large files, token reporting
+
+### Miscellaneous Tasks
+
+- Bump version to 3.0.0
+
+### Refactor
+
+- Remove obsolete scripts and agents (moved to _dev folders)
+## [2.2.16] - 2026-03-25
+
+### Bug Fixes
+
 - Resolve all shellcheck warnings in merge-worktrees.sh
+
+### Miscellaneous Tasks
+
+- Bump version to 2.2.16
 ## [2.2.15] - 2026-03-25
 
 ### Bug Fixes
