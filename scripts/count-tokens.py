@@ -17,12 +17,6 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-PRICING = {
-    "claude-opus-4-6": {"input": 15.0, "output": 75.0, "cache_read": 1.5, "cache_create": 18.75},
-    "claude-sonnet-4-6": {"input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_create": 3.75},
-    "claude-haiku-4-5": {"input": 0.8, "output": 4.0, "cache_read": 0.08, "cache_create": 1.0},
-}
-
 MODEL_ALIASES = {
     "claude-opus-4-6[1m]": "claude-opus-4-6",
     "claude-sonnet-4-6[1m]": "claude-sonnet-4-6",
@@ -182,25 +176,6 @@ def parse_transcript(
     return counts
 
 
-def estimate_cost(model: str, counts: dict[str, int]) -> float:
-    """Estimate cost in USD for a model's token usage."""
-    pricing = PRICING.get(model)
-    if not pricing:
-        for key, val in PRICING.items():
-            if model.startswith(key.rsplit("-", 1)[0]):
-                pricing = val
-                break
-    if not pricing:
-        return 0.0
-
-    cost = 0.0
-    cost += counts["input_tokens"] * pricing["input"] / 1_000_000
-    cost += counts["output_tokens"] * pricing["output"] / 1_000_000
-    cost += counts["cache_read_input_tokens"] * pricing["cache_read"] / 1_000_000
-    cost += counts["cache_creation_input_tokens"] * pricing["cache_create"] / 1_000_000
-    return cost
-
-
 def build_result(label: str, all_counts: dict[str, dict[str, int]]) -> dict:
     """Build the summary result dict."""
     total_input = sum(c["input_tokens"] for c in all_counts.values())
@@ -208,7 +183,6 @@ def build_result(label: str, all_counts: dict[str, dict[str, int]]) -> dict:
     total_cache_read = sum(c["cache_read_input_tokens"] for c in all_counts.values())
     total_cache_create = sum(c["cache_creation_input_tokens"] for c in all_counts.values())
     total_calls = sum(c["api_calls"] for c in all_counts.values())
-    total_cost = sum(estimate_cost(m, c) for m, c in all_counts.items())
 
     return {
         "scope": label,
@@ -219,10 +193,9 @@ def build_result(label: str, all_counts: dict[str, dict[str, int]]) -> dict:
             "cache_create_tokens": total_cache_create,
             "total_tokens": total_input + total_output + total_cache_read + total_cache_create,
             "api_calls": total_calls,
-            "estimated_cost_usd": round(total_cost, 4),
         },
         "by_model": {
-            model: {**counts, "cost_usd": round(estimate_cost(model, counts), 4)}
+            model: dict(counts)
             for model, counts in sorted(all_counts.items())
         },
     }

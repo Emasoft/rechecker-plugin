@@ -312,5 +312,5 @@ The script prints a JSON summary. Read it and report to the user:
 - Files reviewed, issues found/fixed per pass, what was skipped
 - Whether the security pass was triggered and why
 - Whether a commit was made
-- **Token usage**: total tokens, estimated cost, breakdown by model
+- **Token usage**: total tokens, breakdown by model
 - Reports location: `.rechecker/reports/$RCK_UUID/`
