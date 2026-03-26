@@ -374,10 +374,24 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/finalize-session.py" \
 
 Add `--commit-made` only if Step 5 created a commit.
 
-The script prints a JSON summary. Read it and report to the user:
-- **Session**: uuid and commit hash
-- Files reviewed, issues found/fixed per pass, what was skipped
-- Whether the security pass was triggered and why
-- Whether a commit was made
-- **Token usage**: total tokens, breakdown by model
-- Reports location: `.rechecker/reports/$RCK_UUID/`
+The script prints a JSON summary. Read it and print a concise report in this exact format:
+
+```
+--- Recheck: <RCK_UUID> (commit <short-hash>) ---
+Files: <N> reviewed | Lint: <clean/N errors fixed> | Security: <skipped/triggered>
+Pass 1 (correctness): <N issues fixed / clean>
+Pass 2 (functional):  <N issues fixed / clean>
+Pass 3 (adversarial): <N issues fixed / clean>
+[Pass 4 (security):   <N issues fixed / clean>]  ← only if triggered
+
+Fixes applied:
+  - <file>:<line> — <one-line description of fix>    ← one per fix, skip if none
+  - ...
+
+Commit: <yes (hash) / no fixes needed>
+Tokens: <total>  (input: <N>, output: <N>, cache_read: <N>, cache_create: <N>, calls: <N>)
+Reports: .rechecker/reports/<RCK_UUID>/
+---
+```
+
+If no fixes were applied, omit the "Fixes applied" section entirely.
