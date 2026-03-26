@@ -87,6 +87,12 @@ def parse_transcript(
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
             for line in f:
+                # Fast pre-filter: skip lines that can't contain usage data.
+                # Lines with screenshots/images are huge but never have "usage".
+                # This avoids json.loads on multi-MB base64 lines.
+                if '"usage"' not in line:
+                    continue
+
                 line = line.strip()
                 if not line:
                     continue
