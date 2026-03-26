@@ -19,13 +19,23 @@ If it prints `SKIP`, stop immediately — this commit was made by the rechecker 
 git show --name-only --format= --diff-filter=d HEAD
 ```
 
-Filter out non-code files. Skip files matching these patterns:
-- Media: `*.png, *.jpg, *.jpeg, *.gif, *.svg, *.ico, *.mp3, *.mp4, *.webm, *.webp, *.avif, *.bmp, *.tiff, *.pdf, *.eps, *.ai`
-- Data/config: `*.csv, *.tsv, *.parquet, *.sqlite, *.db, *.lock, *.lockb`
-- Generated: `CHANGELOG.md, LICENSE, *.min.js, *.min.css, *.map, *.bundle.js, *.chunk.js`
-- Docs: `*.md` (except README.md)
-- Binary: `*.whl, *.tar.gz, *.zip, *.egg, *.so, *.dylib, *.dll, *.exe, *.bin`
+Skip ONLY these file types — everything else is reviewable:
+- Media: `*.png, *.jpg, *.jpeg, *.gif, *.ico, *.mp3, *.mp4, *.webm, *.webp, *.avif, *.bmp, *.tiff, *.eps, *.ai`
+- Binary: `*.whl, *.tar.gz, *.zip, *.egg, *.so, *.dylib, *.dll, *.exe, *.bin, *.o, *.a, *.class`
 - Fonts: `*.woff, *.woff2, *.ttf, *.otf, *.eot`
+- Data blobs: `*.sqlite, *.db, *.parquet`
+- Generated: `CHANGELOG.md, LICENSE, *.min.js, *.min.css, *.map, *.bundle.js, *.chunk.js`
+- Lock files: `*.lock, *.lockb, uv.lock, package-lock.json, yarn.lock, Cargo.lock`
+
+DO review these — they are code/config and need validation:
+- `.md` files (skills, agents, commands, rules, README, etc.)
+- `.json` files (plugin.json, hooks.json, package.json, tsconfig.json, etc.)
+- `.toml` files (pyproject.toml, Cargo.toml, cliff.toml, etc.)
+- `.yaml`/`.yml` files (CI, configs, docker-compose, etc.)
+- `.xml`, `.html`, `.svg`, `.css`, `.scss`, `.less` files
+- `.plist`, `.cfg`, `.ini`, `.env.example` files
+- `.sh`, `.bash`, `.zsh` files
+- All source code files (`.py`, `.js`, `.ts`, `.rs`, `.go`, `.java`, `.rb`, `.c`, `.cpp`, etc.)
 
 Also skip files larger than 500KB.
 
@@ -47,19 +57,43 @@ Note the printed values. Use them literally in all subsequent bash commands — 
 
 ## Step 3: Lint pass
 
-Run linters on the changed files and save the raw output to a file. Do NOT read the output into context.
+Run the appropriate linter for each file type and save all output to a single file. Do NOT read the output into context.
 
-For Python files:
+Group the changed files by extension and run the matching linter for each group. Only run linters that are available on PATH — skip gracefully if a linter is not installed.
+
 ```bash
-uv run ruff check <file1> <file2> ... > "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; uv run mypy <file1> <file2> ... --ignore-missing-imports >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; true
+# Python (.py)
+uv run ruff check <files> >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; uv run mypy <files> --ignore-missing-imports >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; true
+
+# JavaScript/TypeScript (.js, .ts, .jsx, .tsx, .mjs, .cjs)
+npx eslint <files> >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; npx tsc --noEmit >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; true
+
+# JSON (.json)
+for f in <json-files>; do python3 -m json.tool "$f" > /dev/null 2>> "$REPORT_DIR/pass0-lint-raw.txt" || echo "JSON INVALID: $f" >> "$REPORT_DIR/pass0-lint-raw.txt"; done
+
+# YAML (.yaml, .yml)
+python3 -c "import yaml, sys; yaml.safe_load(open(sys.argv[1]))" <file> 2>> "$REPORT_DIR/pass0-lint-raw.txt" || echo "YAML INVALID: <file>" >> "$REPORT_DIR/pass0-lint-raw.txt"
+
+# TOML (.toml)
+python3 -c "import tomllib, sys; tomllib.load(open(sys.argv[1],'rb'))" <file> 2>> "$REPORT_DIR/pass0-lint-raw.txt" || echo "TOML INVALID: <file>" >> "$REPORT_DIR/pass0-lint-raw.txt"
+
+# XML/SVG/HTML (.xml, .svg, .html, .xhtml)
+python3 -c "from xml.etree.ElementTree import parse; parse(sys.argv[1])" <file> 2>> "$REPORT_DIR/pass0-lint-raw.txt" || echo "XML INVALID: <file>" >> "$REPORT_DIR/pass0-lint-raw.txt"
+
+# Shell (.sh, .bash, .zsh)
+shellcheck <files> >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; true
+
+# CSS/SCSS/LESS (.css, .scss, .less)
+npx stylelint <files> >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; true
+
+# Rust (.rs)
+cargo check 2>> "$REPORT_DIR/pass0-lint-raw.txt"; true
+
+# Go (.go)
+go vet <files> 2>> "$REPORT_DIR/pass0-lint-raw.txt"; true
 ```
 
-For JavaScript/TypeScript files:
-```bash
-npx eslint <file1> <file2> ... > "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; npx tsc --noEmit >> "$REPORT_DIR/pass0-lint-raw.txt" 2>/dev/null; true
-```
-
-For mixed projects, run whichever linters apply.
+Only run linters for file types that are present in the changed files. Skip linters that are not installed.
 
 Then spawn a `rechecker-plugin:lint-filter` agent (haiku) to strip warnings, keeping only errors:
 - Input: `$REPORT_DIR/pass0-lint-raw.txt`
