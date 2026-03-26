@@ -6,8 +6,22 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Take token snapshot in separate Bash call to guarantee transcript flush
+- Calibrate token snapshot — read a tiny file first to flush transcript usage
+
+### Features
+
+- Delta-based token counting — snapshot before, diff after
+## [3.0.4] - 2026-03-26
+
+### Bug Fixes
+
 - Review all code/config files, not just source code
 - Use uvx/bunx for linters, fix SVG/HTML/YAML/TOML validation, add pdf to skip list
+
+### Miscellaneous Tasks
+
+- Bump version to 3.0.4
 ## [3.0.3] - 2026-03-26
 
 ### Bug Fixes
