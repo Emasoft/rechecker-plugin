@@ -262,14 +262,16 @@ def main() -> None:
         until: datetime | None = None
         if "--until" in args:
             u_idx = args.index("--until")
-            if u_idx + 1 < len(args):
-                try:
-                    until = datetime.fromisoformat(args[u_idx + 1].replace("Z", "+00:00"))
-                    if until.tzinfo is None:
-                        until = until.replace(tzinfo=timezone.utc)
-                except ValueError:
-                    print(f"Invalid --until timestamp: {args[u_idx + 1]}", file=sys.stderr)
-                    sys.exit(1)
+            if u_idx + 1 >= len(args):
+                print("--until requires a timestamp argument", file=sys.stderr)
+                sys.exit(1)
+            try:
+                until = datetime.fromisoformat(args[u_idx + 1].replace("Z", "+00:00"))
+                if until.tzinfo is None:
+                    until = until.replace(tzinfo=timezone.utc)
+            except ValueError:
+                print(f"Invalid --until timestamp: {args[u_idx + 1]}", file=sys.stderr)
+                sys.exit(1)
 
         transcripts = find_current_transcripts()
         if not transcripts:
