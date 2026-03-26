@@ -24,24 +24,38 @@ Your prompt contains:
 
 Example prompt: `"Fix bugs in: src/utils.py, src/auth.py — Read findings from: reports_dev/rck-pass1-review.md — Write fix report to: reports_dev/rck-pass1-fixes.md"`
 
-## Tools
+## Tools — priority order
 
-Prefer surgical tools over reading/editing entire files:
-- **Serena MCP** (`find_symbol`, `replace_symbol_body`, `get_symbols_overview`, `find_referencing_symbols`): Find the exact function/method by name and replace only its body. Verify callers aren't broken.
-- **Grepika** (`search`, `refs`, `outline`, `context`): Fast indexed search across the codebase, find symbol references, get file outlines.
-- **TLDR** (`tldr structure`, `tldr search`): Quickly locate symbols and understand code structure.
-- **Read/Edit**: Fall back to these only when the above are unavailable or the fix spans multiple symbols.
+**ALWAYS use Serena MCP first.** It is the primary tool for locating and editing code. Only fall back to other tools if Serena fails or is unavailable.
+
+1. **Serena MCP (use first, always)**:
+   - `mcp__plugin_serena_serena__get_symbols_overview` — get the structure of a file before doing anything
+   - `mcp__plugin_serena_serena__find_symbol` — locate the exact function/class/method by name
+   - `mcp__plugin_serena_serena__replace_symbol_body` — replace only the body of the target symbol (most surgical edit possible)
+   - `mcp__plugin_serena_serena__insert_after_symbol` / `insert_before_symbol` — add code adjacent to a symbol
+   - `mcp__plugin_serena_serena__replace_content` — replace arbitrary content within a file
+   - `mcp__plugin_serena_serena__find_referencing_symbols` — verify callers are not broken after your fix
+   - `mcp__plugin_serena_serena__search_for_pattern` — find code patterns across the codebase
+
+2. **Grepika (use if Serena can't find it)**:
+   - `search`, `refs`, `outline`, `context`, `get` — indexed search, symbol references, file structure
+
+3. **TLDR (quick structure overview)**:
+   - `tldr structure`, `tldr search` — understand code layout without reading full files
+
+4. **Read/Edit (last resort)**:
+   - Use only when the fix spans multiple symbols, or Serena and Grepika are both unavailable
 
 ## Protocol
 
 1. Read the findings file path from your prompt.
 2. Read the findings file. It contains `### BUG:` or `### ISSUE:` or `### VULN:` sections with severity, location, problem description, and suggested fix.
 3. For each finding:
-   a. Use Serena `find_symbol` to locate the function/class mentioned. If unavailable, use Grepika `search` or `refs`, or `tldr search`, or read the file.
+   a. **Start with Serena**: call `get_symbols_overview` on the file, then `find_symbol` to locate the function/class mentioned in the finding.
    b. Read only the relevant symbol body, not the entire file.
    c. Understand the root cause.
-   d. Apply the **minimal** fix using Serena `replace_symbol_body` if possible. Otherwise use Edit. Change as few characters as possible. Do NOT restructure code.
-   e. Verify your fix doesn't break callers using Serena `find_referencing_symbols` or Grepika `refs`.
+   d. Apply the **minimal** fix using Serena `replace_symbol_body`. If the fix is outside a symbol body, use `replace_content` or fall back to Edit. Change as few characters as possible. Do NOT restructure code.
+   e. Verify your fix doesn't break callers using Serena `find_referencing_symbols`.
 4. After fixing all issues, write a fix summary to the report file path:
    - List each finding: fixed, skipped (with reason), or failed
    - Keep it brief — one line per finding
