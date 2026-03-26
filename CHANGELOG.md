@@ -6,6 +6,21 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Add --until to count-tokens.py to scope token counts to recheck window
+- Skip multi-MB lines before json.loads to avoid OOM on large transcripts
+- Memory-safe JSONL parsing — peek first 4KB, skip multi-MB lines without reading
+- Use mmap for zero-copy JSONL parsing — same technique as PSS Rust binary
+- Prevent UnboundLocalError if mmap fails, keep fd open alongside mmap
+- Error on --until without value instead of silently ignoring
+- Remove stale 'estimated cost' from docstring
+
+### Refactor
+
+- Remove cost estimation — report only token counts
+## [3.0.2] - 2026-03-26
+
+### Bug Fixes
+
 - Remove tools restriction from fixer agent — allow all tools
 - Prioritize Serena MCP as primary tool in fixer agent instructions
 - Audit fixes — clarify shell var persistence, fix lint stderr, clean step numbering
@@ -23,6 +38,10 @@ All notable changes to this project will be documented in this file.
 - Add Pass 0 lint check with haiku lint-filter agent
 - Add session UUID, commit hash, and history.jsonl for recheck audit trail
 - Add finalize-session.py script — automates token counting, history, and cleanup
+
+### Miscellaneous Tasks
+
+- Bump version to 3.0.2
 ## [3.0.1] - 2026-03-26
 
 ### Bug Fixes
