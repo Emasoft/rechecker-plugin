@@ -4,14 +4,15 @@
 Takes two snapshots of cumulative session token usage (before and after),
 then computes the difference to get exact consumption for a specific operation.
 
-Parsing logic derived from claude-devtools (matt1398/claude-devtools):
-- requestId deduplication: Claude writes multiple streaming entries per API call
-  with the same requestId but incrementally increasing output_tokens.
-  Only the last entry per requestId has the final, correct token counts.
-- isSidechain filtering: skip internal tool routing messages
-- <synthetic> model filtering: skip non-API synthetic entries
+Parsing pipeline replicated from claude-devtools (matt1398/claude-devtools):
+1. Parse all JSONL entries with type=assistant and message.usage (parseJsonlFile)
+2. Deduplicate by requestId — keep only the LAST entry per requestId
+   (Claude writes multiple streaming entries per API response with incrementally
+   increasing output_tokens; only the last has the final correct counts)
+3. Sum usage from deduplicated entries (calculateMetrics)
 
 Uses mmap for zero-copy streaming — handles 2GB+ transcripts with screenshots.
+Lines over 1MB are skipped (screenshot/base64 blobs never contain usage data).
 
 Usage:
     python3 count-tokens.py --snapshot <output-file>   # save current totals
@@ -39,63 +40,58 @@ TOKEN_KEYS = [
     "api_calls",
 ]
 
+# Lines over 1MB are screenshot/base64 blobs — skip without reading
+SKIP_THRESHOLD = 1_000_000
+
 
 def find_current_transcripts() -> list[Path]:
-    """Find JSONL transcripts for the current project only."""
+    """Find JSONL transcripts for the current project only.
+
+    Matches the exact encoded project path as the directory name prefix,
+    NOT as a substring — avoids matching worktree project dirs that contain
+    the same path segment (e.g. project--claude-worktrees-...).
+    """
     projects_dir = Path.home() / ".claude" / "projects"
     if not projects_dir.is_dir():
         return []
     project_dir_hint = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
-    encoded_hint = project_dir_hint.replace("/", "-").lstrip("-")
+    # Claude encodes /Users/foo/bar as -Users-foo-bar
+    encoded_exact = "-" + project_dir_hint.replace("/", "-").lstrip("-")
     results = []
     for project_dir in projects_dir.iterdir():
         if not project_dir.is_dir():
             continue
-        if encoded_hint not in project_dir.name:
+        # Exact match: dir name must BE the encoded path, not just contain it
+        if project_dir.name != encoded_exact:
             continue
         for jsonl in project_dir.rglob("*.jsonl"):
             results.append(jsonl)
     return results
 
 
-def parse_transcript_cumulative(path: Path) -> dict[str, dict[str, int]]:
-    """Sum ALL usage entries in a transcript with requestId deduplication.
+def _parse_entries(path: Path) -> list[dict]:
+    """Parse assistant entries with usage from a single JSONL file.
 
-    Claude Code writes multiple JSONL entries per API response during streaming,
-    each with the same requestId but incrementally increasing output_tokens.
-    Only the last entry per requestId has the final, correct counts.
-
-    Also skips:
-    - isSidechain entries (internal tool routing)
-    - <synthetic> model entries (not real API calls)
-
-    Uses mmap with 512-byte peek to skip multi-MB screenshot/base64 lines.
+    Returns a list of dicts with: request_id, model, usage.
+    Uses mmap + skip lines >1MB for memory safety.
     """
-    PEEK = 512
-
-    # Two-pass approach (same as claude-devtools deduplicateByRequestId):
-    # Pass 1: collect all entries with usage, keyed by requestId (last wins)
-    # Pass 2: sum the deduplicated entries
-    # For entries without requestId, they pass through directly.
-
-    entries_by_request_id: dict[str, dict] = {}
-    entries_no_request_id: list[dict] = []
+    entries: list[dict] = []
 
     try:
         f = open(path, "rb")  # noqa: SIM115
     except OSError:
-        return {}
+        return entries
 
     try:
         size = f.seek(0, 2)
         if size == 0:
             f.close()
-            return {}
+            return entries
         f.seek(0)
         mm = mmap_mod.mmap(f.fileno(), 0, access=mmap_mod.ACCESS_READ)
     except (OSError, ValueError):
         f.close()
-        return {}
+        return entries
 
     try:
         pos = 0
@@ -107,22 +103,9 @@ def parse_transcript_cumulative(path: Path) -> dict[str, dict[str, int]]:
             line_len = nl - pos
             pos = nl + 1
 
-            if line_len < 20:
+            if line_len < 20 or line_len > SKIP_THRESHOLD:
                 continue
 
-            # Peek at first 512 bytes for pre-filter
-            peek_end = min(line_start + PEEK, line_start + line_len)
-            peek = mm[line_start:peek_end]
-
-            # Must contain "usage" to have token data
-            if b'"usage"' not in peek:
-                continue
-
-            # Skip sidechain entries (internal tool routing)
-            if b'"isSidechain":true' in peek or b'"isSidechain": true' in peek:
-                continue
-
-            # Parse the full line
             line_bytes = mm[line_start:line_start + line_len]
             try:
                 entry = json.loads(line_bytes)
@@ -132,70 +115,73 @@ def parse_transcript_cumulative(path: Path) -> dict[str, dict[str, int]]:
             if entry.get("type") != "assistant":
                 continue
 
-            # Skip sidechain (in case spacing didn't match peek)
-            if entry.get("isSidechain"):
-                continue
-
             msg = entry.get("message", {})
             usage = msg.get("usage")
             if not usage:
                 continue
 
-            # Skip synthetic entries (not real API calls)
-            model: str = msg.get("model") or "unknown"
-            if model == "<synthetic>":
-                continue
-
-            model = MODEL_ALIASES.get(model, model)
-
-            # Build a compact record for dedup
-            record = {
-                "model": model,
-                "input_tokens": usage.get("input_tokens", 0),
-                "output_tokens": usage.get("output_tokens", 0),
-                "cache_read_input_tokens": usage.get("cache_read_input_tokens", 0),
-                "cache_creation_input_tokens": usage.get("cache_creation_input_tokens", 0),
-            }
-
-            # Dedup by requestId — last entry wins (streaming writes incremental updates)
-            request_id = entry.get("requestId")
-            if request_id:
-                entries_by_request_id[request_id] = record
-            else:
-                entries_no_request_id.append(record)
+            entries.append({
+                "request_id": entry.get("requestId"),
+                "model": msg.get("model") or "unknown",
+                "usage": usage,
+            })
     finally:
         mm.close()
         f.close()
 
-    # Sum deduplicated entries
-    counts: dict[str, dict[str, int]] = {}
-    all_records = list(entries_by_request_id.values()) + entries_no_request_id
+    return entries
 
-    for record in all_records:
-        model = record["model"]
-        if model not in counts:
-            counts[model] = {k: 0 for k in TOKEN_KEYS}
-        c = counts[model]
-        c["input_tokens"] += record["input_tokens"]
-        c["output_tokens"] += record["output_tokens"]
-        c["cache_read_input_tokens"] += record["cache_read_input_tokens"]
-        c["cache_creation_input_tokens"] += record["cache_creation_input_tokens"]
-        c["api_calls"] += 1
 
-    return counts
+def _deduplicate_by_request_id(entries: list[dict]) -> list[dict]:
+    """Deduplicate streaming entries by requestId — keep only the last per ID.
+
+    Exact replication of claude-devtools deduplicateByRequestId().
+    Entries without requestId pass through unchanged.
+    """
+    last_index_by_rid: dict[str, int] = {}
+    for i, e in enumerate(entries):
+        rid = e["request_id"]
+        if rid:
+            last_index_by_rid[rid] = i
+
+    if not last_index_by_rid:
+        return entries
+
+    return [
+        e for i, e in enumerate(entries)
+        if not e["request_id"] or last_index_by_rid.get(e["request_id"]) == i
+    ]
 
 
 def aggregate_all() -> dict[str, dict[str, int]]:
-    """Sum usage across all transcripts for the current project."""
-    all_counts: dict[str, dict[str, int]] = {}
+    """Parse all transcripts, deduplicate, and sum usage per model.
+
+    Pipeline: parse entries → dedup by requestId → sum per model.
+    Matches claude-devtools: parseJsonlFile → calculateMetrics.
+    """
+    # Collect all entries across all transcript files
+    all_entries: list[dict] = []
     for t in find_current_transcripts():
-        counts = parse_transcript_cumulative(t)
-        for model, mc in counts.items():
-            if model not in all_counts:
-                all_counts[model] = {k: 0 for k in TOKEN_KEYS}
-            for k in TOKEN_KEYS:
-                all_counts[model][k] += mc[k]
-    return all_counts
+        all_entries.extend(_parse_entries(t))
+
+    # Deduplicate streaming entries (global across all files)
+    deduped = _deduplicate_by_request_id(all_entries)
+
+    # Sum per model
+    counts: dict[str, dict[str, int]] = {}
+    for e in deduped:
+        model = MODEL_ALIASES.get(e["model"], e["model"])
+        if model not in counts:
+            counts[model] = {k: 0 for k in TOKEN_KEYS}
+        c = counts[model]
+        u = e["usage"]
+        c["input_tokens"] += u.get("input_tokens", 0)
+        c["output_tokens"] += u.get("output_tokens", 0)
+        c["cache_read_input_tokens"] += u.get("cache_read_input_tokens", 0)
+        c["cache_creation_input_tokens"] += u.get("cache_creation_input_tokens", 0)
+        c["api_calls"] += 1
+
+    return counts
 
 
 def build_summary(all_counts: dict[str, dict[str, int]]) -> dict:
@@ -243,7 +229,7 @@ def main() -> None:
         print("  python3 count-tokens.py --delta <before-file>")
         print()
         print("Parsing: requestId deduplication (per claude-devtools),")
-        print("mmap streaming, sidechain/synthetic filtering.")
+        print("mmap streaming, lines >1MB skipped.")
         print()
         print("Workflow:")
         print("  1. Take a snapshot before the operation:")
