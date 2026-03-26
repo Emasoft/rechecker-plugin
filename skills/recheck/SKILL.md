@@ -289,48 +289,28 @@ EOF
 )"
 ```
 
-## Step 6: Token usage and session record
+## Step 6: Finalize session
 
-Run the token counter to measure how much the recheck cost:
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/count-tokens.py" --since "$RCK_START_TS"
-```
-
-Save the output to `$REPORT_DIR/token-usage.json`.
-
-Then append a session record to `.rechecker/history.jsonl` — one JSON line per recheck run, for future analysis:
+Run the finalize script. It handles: token counting, session history, report cleanup — all in one call. Replace the `$` variables with the actual values you tracked.
 
 ```bash
-mkdir -p .rechecker && RCK_END_TS=$(date -u +%Y-%m-%dT%H:%M:%S) && echo "{\"uuid\":\"$RCK_UUID\",\"commit\":\"$RCK_COMMIT\",\"started\":\"$RCK_START_TS\",\"finished\":\"$RCK_END_TS\",\"files_reviewed\":$FILES_REVIEWED,\"issues_found\":$ISSUES_FOUND,\"issues_fixed\":$ISSUES_FIXED,\"commit_made\":$COMMIT_MADE}" >> .rechecker/history.jsonl
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/finalize-session.py" \
+    --uuid "$RCK_UUID" \
+    --commit "$RCK_COMMIT" \
+    --start "$RCK_START_TS" \
+    --report-dir "$REPORT_DIR" \
+    --files-reviewed <N> \
+    --issues-found <N> \
+    --issues-fixed <N> \
+    [--commit-made]
 ```
 
-Replace `$FILES_REVIEWED`, `$ISSUES_FOUND`, `$ISSUES_FIXED` with the actual numbers, and `$COMMIT_MADE` with `true` or `false`.
+Add `--commit-made` only if Step 5 created a commit.
 
-## Step 7: Cleanup
-
-Move all reports from `$REPORT_DIR` into `.rechecker/reports/$RCK_UUID/` (the permanent gitignored location keyed by session), then remove the temp folder:
-
-```bash
-mkdir -p ".rechecker/reports/$RCK_UUID" && mv "$REPORT_DIR"/* ".rechecker/reports/$RCK_UUID/" && rmdir "$REPORT_DIR"
-```
-
-Also move any LLM Externalizer output files generated during this run into the same folder:
-```bash
-mv llm_externalizer_output/rck-* ".rechecker/reports/$RCK_UUID/" 2>/dev/null; mv llm_externalizer_output/*review* ".rechecker/reports/$RCK_UUID/" 2>/dev/null; true
-```
-
-Both `.rechecker/` and `llm_externalizer_output/` are already in `.gitignore` — nothing leaks into git.
-
-## Step 8: Summary
-
-Report to the user:
-- **Session**: `$RCK_UUID` (commit `$RCK_COMMIT`)
-- How many files were reviewed
-- Lint errors found and fixed
-- Issues found per review pass (correctness / functional / adversarial / security) with severity counts
-- What was fixed, what was skipped
+The script prints a JSON summary. Read it and report to the user:
+- **Session**: uuid and commit hash
+- Files reviewed, issues found/fixed per pass, what was skipped
 - Whether the security pass was triggered and why
 - Whether a commit was made
-- **Token usage**: total tokens, estimated cost, breakdown by model (from token-usage.json)
-- Location of reports: `.rechecker/reports/$RCK_UUID/`
+- **Token usage**: total tokens, estimated cost, breakdown by model
+- Reports location: `.rechecker/reports/$RCK_UUID/`
