@@ -149,7 +149,7 @@ Wait for the fixer to complete.
 
 Each pass reviews the code, then fixes any issues found before moving to the next pass.
 
-**For normal files (≤250KB):** send to `mcp__plugin_llm-externalizer_llm-externalizer__code_task`.
+**For normal files (≤250KB):** send to `mcp__plugin_llm-externalizer_llm-externalizer__code_task`. The LLM Externalizer runs in ensemble mode (dual-model review: gemini + grok in parallel) — do not override this, it increases bug detection by ~35%.
 
 **For large files (>250KB):** spawn a general-purpose agent with `model: opus` for each file. Pass the file path and the same review instructions, plus these additional instructions for the opus agent:
 
