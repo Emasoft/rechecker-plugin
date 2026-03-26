@@ -4,15 +4,12 @@
 Takes two snapshots of cumulative session token usage (before and after),
 then computes the difference to get exact consumption for a specific operation.
 
-Parsing pipeline replicated from claude-devtools (matt1398/claude-devtools):
-1. Parse all JSONL entries with type=assistant and message.usage (parseJsonlFile)
-2. Deduplicate by requestId — keep only the LAST entry per requestId
-   (Claude writes multiple streaming entries per API response with incrementally
-   increasing output_tokens; only the last has the final correct counts)
-3. Sum usage from deduplicated entries (calculateMetrics)
+Extracts token usage from JSONL transcripts WITHOUT json.loads — uses regex
+on raw bytes to extract only the fields needed (type, requestId, model, usage).
+This avoids allocating full Python dicts for lines that can be 500KB+.
 
 Uses mmap for zero-copy streaming — handles 2GB+ transcripts with screenshots.
-Lines over 1MB are skipped (screenshot/base64 blobs never contain usage data).
+Lines over 1MB are skipped (screenshot/base64 blobs).
 
 Usage:
     python3 count-tokens.py --snapshot <output-file>   # save current totals
@@ -24,6 +21,7 @@ Output: JSON with per-model and total token counts.
 import json
 import mmap as mmap_mod
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -43,25 +41,34 @@ TOKEN_KEYS = [
 # Lines over 1MB are screenshot/base64 blobs — skip without reading
 SKIP_THRESHOLD = 1_000_000
 
+# Regex patterns to extract fields from raw JSONL bytes without full JSON parsing.
+# These match the top-level fields in Claude Code JSONL entries.
+# "type":"assistant" appears near the start of each line.
+_RE_TYPE = re.compile(rb'"type"\s*:\s*"(assistant)"')
+_RE_REQUEST_ID = re.compile(rb'"requestId"\s*:\s*"([^"]+)"')
+_RE_MODEL = re.compile(rb'"model"\s*:\s*"([^"]+)"')
+# Usage block: extract each token field individually to avoid parsing the object
+_RE_INPUT = re.compile(rb'"input_tokens"\s*:\s*(\d+)')
+_RE_OUTPUT = re.compile(rb'"output_tokens"\s*:\s*(\d+)')
+_RE_CACHE_READ = re.compile(rb'"cache_read_input_tokens"\s*:\s*(\d+)')
+_RE_CACHE_CREATE = re.compile(rb'"cache_creation_input_tokens"\s*:\s*(\d+)')
+
 
 def find_current_transcripts() -> list[Path]:
     """Find JSONL transcripts for the current project only.
 
-    Matches the exact encoded project path as the directory name prefix,
-    NOT as a substring — avoids matching worktree project dirs that contain
-    the same path segment (e.g. project--claude-worktrees-...).
+    Matches the exact encoded project path as the directory name,
+    NOT as a substring — avoids matching worktree project dirs.
     """
     projects_dir = Path.home() / ".claude" / "projects"
     if not projects_dir.is_dir():
         return []
     project_dir_hint = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
-    # Claude encodes /Users/foo/bar as -Users-foo-bar
     encoded_exact = "-" + project_dir_hint.replace("/", "-").lstrip("-")
     results = []
     for project_dir in projects_dir.iterdir():
         if not project_dir.is_dir():
             continue
-        # Exact match: dir name must BE the encoded path, not just contain it
         if project_dir.name != encoded_exact:
             continue
         for jsonl in project_dir.rglob("*.jsonl"):
@@ -70,10 +77,10 @@ def find_current_transcripts() -> list[Path]:
 
 
 def _parse_entries(path: Path) -> list[dict]:
-    """Parse assistant entries with usage from a single JSONL file.
+    """Extract assistant entries with usage from a single JSONL file.
 
-    Returns a list of dicts with: request_id, model, usage.
-    Uses mmap + skip lines >1MB for memory safety.
+    Uses regex on raw bytes — never calls json.loads.
+    Returns a list of dicts with: request_id, model, usage counts.
     """
     entries: list[dict] = []
 
@@ -107,23 +114,38 @@ def _parse_entries(path: Path) -> list[dict]:
                 continue
 
             line_bytes = mm[line_start:line_start + line_len]
-            try:
-                entry = json.loads(line_bytes)
-            except (json.JSONDecodeError, UnicodeDecodeError):
+
+            # Must be type "assistant" (regex matches the top-level type field)
+            if not _RE_TYPE.search(line_bytes):
                 continue
 
-            if entry.get("type") != "assistant":
+            # Must have at least one token count field
+            m_input = _RE_INPUT.search(line_bytes)
+            if not m_input:
                 continue
 
-            msg = entry.get("message", {})
-            usage = msg.get("usage")
-            if not usage:
-                continue
+            # Extract all token fields
+            input_tokens = int(m_input.group(1))
+            m_output = _RE_OUTPUT.search(line_bytes)
+            output_tokens = int(m_output.group(1)) if m_output else 0
+            m_cache_read = _RE_CACHE_READ.search(line_bytes)
+            cache_read = int(m_cache_read.group(1)) if m_cache_read else 0
+            m_cache_create = _RE_CACHE_CREATE.search(line_bytes)
+            cache_create = int(m_cache_create.group(1)) if m_cache_create else 0
+
+            # Extract requestId and model
+            m_rid = _RE_REQUEST_ID.search(line_bytes)
+            request_id = m_rid.group(1).decode("utf-8", errors="replace") if m_rid else None
+            m_model = _RE_MODEL.search(line_bytes)
+            model = m_model.group(1).decode("utf-8", errors="replace") if m_model else "unknown"
 
             entries.append({
-                "request_id": entry.get("requestId"),
-                "model": msg.get("model") or "unknown",
-                "usage": usage,
+                "request_id": request_id,
+                "model": model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cache_read_input_tokens": cache_read,
+                "cache_creation_input_tokens": cache_create,
             })
     finally:
         mm.close()
@@ -154,31 +176,23 @@ def _deduplicate_by_request_id(entries: list[dict]) -> list[dict]:
 
 
 def aggregate_all() -> dict[str, dict[str, int]]:
-    """Parse all transcripts, deduplicate, and sum usage per model.
-
-    Pipeline: parse entries → dedup by requestId → sum per model.
-    Matches claude-devtools: parseJsonlFile → calculateMetrics.
-    """
-    # Collect all entries across all transcript files
+    """Parse all transcripts, deduplicate, and sum usage per model."""
     all_entries: list[dict] = []
     for t in find_current_transcripts():
         all_entries.extend(_parse_entries(t))
 
-    # Deduplicate streaming entries (global across all files)
     deduped = _deduplicate_by_request_id(all_entries)
 
-    # Sum per model
     counts: dict[str, dict[str, int]] = {}
     for e in deduped:
         model = MODEL_ALIASES.get(e["model"], e["model"])
         if model not in counts:
             counts[model] = {k: 0 for k in TOKEN_KEYS}
         c = counts[model]
-        u = e["usage"]
-        c["input_tokens"] += u.get("input_tokens", 0)
-        c["output_tokens"] += u.get("output_tokens", 0)
-        c["cache_read_input_tokens"] += u.get("cache_read_input_tokens", 0)
-        c["cache_creation_input_tokens"] += u.get("cache_creation_input_tokens", 0)
+        c["input_tokens"] += e["input_tokens"]
+        c["output_tokens"] += e["output_tokens"]
+        c["cache_read_input_tokens"] += e["cache_read_input_tokens"]
+        c["cache_creation_input_tokens"] += e["cache_creation_input_tokens"]
         c["api_calls"] += 1
 
     return counts
@@ -228,7 +242,7 @@ def main() -> None:
         print("  python3 count-tokens.py --snapshot <output-file>")
         print("  python3 count-tokens.py --delta <before-file>")
         print()
-        print("Parsing: requestId deduplication (per claude-devtools),")
+        print("Parsing: regex extraction (no json.loads), requestId dedup,")
         print("mmap streaming, lines >1MB skipped.")
         print()
         print("Workflow:")
