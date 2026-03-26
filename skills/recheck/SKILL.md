@@ -55,7 +55,10 @@ Generate a unique session ID, record the start timestamp, the commit hash, and c
 RCK_UUID=$(python3 -c "import uuid; print(uuid.uuid4().hex[:12])") && RCK_START_TS=$(date -u +%Y-%m-%dT%H:%M:%S) && RCK_COMMIT=$(git rev-parse HEAD) && REPORT_DIR="reports_dev/rck-${RCK_UUID}" && mkdir -p "$REPORT_DIR" && echo "RCK_UUID=$RCK_UUID RCK_START_TS=$RCK_START_TS RCK_COMMIT=$RCK_COMMIT REPORT_DIR=$REPORT_DIR"
 ```
 
-Then, in a **separate Bash call** (this guarantees the transcript contains the latest API usage from the tool call above), take a token snapshot:
+**Token calibration**: before the recheck begins, force a fresh transcript entry by reading a tiny file (this tool call writes updated cumulative usage to the JSONL), then take a snapshot:
+
+1. Read any small file (e.g., `.claude-plugin/plugin.json`) — this triggers an API round-trip whose usage is written to the transcript.
+2. Then run the snapshot in a Bash call:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/count-tokens.py" --snapshot "$REPORT_DIR/before-tokens.json"
