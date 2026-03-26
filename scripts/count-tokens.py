@@ -188,6 +188,19 @@ def build_result(label: str, all_counts: dict[str, dict[str, int]]) -> dict:
 def main() -> None:
     args = sys.argv[1:]
 
+    if not args or "--help" in args or "-h" in args:
+        print("Count tokens used in a time window or worktree session.")
+        print()
+        print("Usage:")
+        print("  python3 count-tokens.py --since <ISO-timestamp>")
+        print("  python3 count-tokens.py --worktree <name>")
+        print()
+        print("Options:")
+        print("  --since <ts>     Count tokens from API calls after this timestamp")
+        print("  --worktree <name>  Count tokens from a specific worktree session")
+        print("  -h, --help       Show this help")
+        sys.exit(0)
+
     if "--since" in args:
         idx = args.index("--since")
         if idx + 1 >= len(args):
