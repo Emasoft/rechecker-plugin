@@ -543,11 +543,13 @@ def main() -> int:
     report_dir.mkdir(parents=True, exist_ok=True)
 
     # Step 4: Token snapshot
+    # Resolve plugin root: env var > --plugin-root arg > infer from __file__
+    if not plugin_root:
+        plugin_root = str(Path(__file__).resolve().parent.parent)
     snapshot_path = report_dir / "before-tokens.json"
-    if plugin_root:
-        count_script = Path(plugin_root) / "scripts" / "count-tokens.py"
-        if count_script.is_file():
-            _run([sys.executable, str(count_script), "--snapshot", str(snapshot_path)])
+    count_script = Path(plugin_root) / "scripts" / "count-tokens.py"
+    if count_script.is_file():
+        _run([sys.executable, str(count_script), "--snapshot", str(snapshot_path)])
 
     # Step 5: Split into groups and write per-group JSON files
     groups = split_into_groups(files, report_dir, max_group_size)
@@ -573,6 +575,7 @@ def main() -> int:
             "started": rck_start,
             "report_dir": str(report_dir),
             "snapshot_path": str(snapshot_path),
+            "plugin_root": plugin_root,
         },
         "files_total": len(files),
         "groups": [
