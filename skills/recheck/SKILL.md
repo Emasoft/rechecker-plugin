@@ -7,7 +7,7 @@ description: >
 
 ## Overview
 
-Automated code review and fix pipeline for the latest commit. A triage script handles all mechanical work (file detection, linting, classification). The orchestrator only dispatches review agents from the manifest.
+Automated code review and fix pipeline. A triage script handles all mechanical work and outputs a compact manifest with pre-split file groups. The orchestrator only reads group metadata and dispatches agents — never individual file paths.
 
 ## Prerequisites
 
@@ -19,40 +19,39 @@ Copy this checklist and track your progress:
 
 ## Instructions
 
-1. **Run triage** — the triage script detects files, runs linters, classifies everything, and outputs a JSON manifest:
+1. **Run triage** — detects files, lints, classifies, splits into groups, outputs manifest:
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/triage.py"
    ```
-   If exit code is 3, stop (recursion guard or no files). If exit code is 0, read the JSON manifest from stdout and proceed. The manifest contains `session`, `files`, `lint`, and `security_pass` fields.
+   Exit 3 = skip (recursion guard or no files). Exit 0 = read JSON manifest from stdout. The manifest contains `session`, `groups[]`, `lint`, and `security_pass`. Each group has: `id`, `group_file` (path to JSON with file list), `report_file`, `fixes_file`, `lint_errors_file`.
 
-2. **Fix lint errors** — if `manifest.lint.has_errors` is true, spawn `rechecker-plugin:sonnet-code-fixer` with `manifest.lint.files_with_errors` and `manifest.lint.errors_file`. Wait for completion.
+2. **Fix lint errors** — for each group where `lint_errors_file` is not null, spawn `rechecker-plugin:sonnet-code-fixer` with the group's `lint_errors_file` and `group_file`. The agent reads only its own group's files and errors.
 
-3. **Review passes** — dispatch review agents using the pre-split file lists from the manifest. See [review-passes](review-passes.md) for instructions per pass. For `manifest.files.normal`: send to LLM Externalizer `code_task`. For `manifest.files.large`: spawn opus agent per file. After each pass with issues, spawn `rechecker-plugin:sonnet-code-fixer` and wait.
+3. **Review passes** — for each pass (see [review-passes](review-passes.md)), dispatch agents per group. For `category: "normal"` groups: send `group_file` path to LLM Externalizer `code_task` (the agent reads the group JSON to get file paths). For `category: "large"` groups: spawn opus agent with `group_file`. Each agent writes findings to its `report_file`. After each pass, for groups with issues, spawn `rechecker-plugin:sonnet-code-fixer` with `group_file` + `report_file`, writing to `fixes_file`.
    - Pass 1: correctness
    - Pass 2: functional
    - Pass 3: adversarial
-   - Pass 4: security (only if `manifest.security_pass` is true)
+   - Pass 4: security (only groups where `security_relevant` is true)
 
-4. **Commit fixes** — if any files were changed, stage only fixed files and commit:
+4. **Commit fixes** — if any files changed, stage only fixed files and commit:
    ```bash
    git add <fixed-files>
    git commit -m "fix: apply rechecker fixes [rechecker: skip]"
    ```
 
-5. **Finalize session** — use values from `manifest.session`:
+5. **Finalize** — use `manifest.session` values:
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/finalize-session.py" \
        --uuid "<session.uuid>" --commit "<session.commit>" --start "<session.started>" \
        --report-dir "<session.report_dir>" --snapshot "<session.snapshot_path>" \
-       --files-reviewed <files.total> --issues-found <N> --issues-fixed <N> [--commit-made]
+       --files-reviewed <files_total> --issues-found <N> --issues-fixed <N> [--commit-made]
    ```
 
 ## Output
 
-Print a concise report:
 ```
 --- Recheck: <UUID> (commit <hash>) ---
-Files: <N> reviewed | Lint: <status> | Security: <skipped/triggered>
+Files: <N> reviewed (<M> groups) | Lint: <status> | Security: <skipped/triggered>
 Pass 1-3: <N issues fixed / clean>
 Commit: <yes (hash) / no fixes needed>
 Tokens: <total> (input/output/cache breakdown)
@@ -62,12 +61,11 @@ Reports: .rechecker/reports/<UUID>/
 
 ## Error Handling
 
-All stages fail-fast. If triage or any review/fix step fails, the pipeline aborts and reports which step failed. No partial commits are made.
+All stages fail-fast. If triage or any review/fix step fails, the pipeline aborts. No partial commits.
 
 ## Examples
 
 ```bash
-# User commits code, then runs recheck
 /recheck
 ```
 

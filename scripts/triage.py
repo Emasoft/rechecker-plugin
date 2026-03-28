@@ -10,14 +10,14 @@ Performs all mechanical work so the orchestrator only does dispatch:
   6. Lint execution by file type (all linters, grouped by extension)
   7. Lint error filtering (errors only — no haiku agent needed)
   8. Security pass detection (do any files touch auth/network/crypto?)
-  9. Group splitting for parallel review dispatch
+  9. Group splitting — writes per-group JSON files for parallel dispatch
 
-Output: JSON manifest to stdout + files in report dir.
-The orchestrator reads the manifest and dispatches agents.
+Output: compact JSON manifest to stdout (no file paths inline — only
+paths to group JSON files). Each group gets a short ID so reports and
+group files stay correlated through the entire pipeline.
 
 Usage:
-    python3 triage.py --plugin-root <path>
-    python3 triage.py  # uses CLAUDE_PLUGIN_ROOT env var
+    python3 triage.py [--plugin-root <path>] [--max-group-size N]
 
 Exit codes:
     0 = manifest printed, proceed with review
@@ -76,8 +76,9 @@ SECURITY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-MAX_FILE_SIZE = 500 * 1024       # 500KB — skip files larger than this
+MAX_FILE_SIZE = 500 * 1024         # 500KB — skip files larger than this
 LARGE_FILE_THRESHOLD = 250 * 1024  # 250KB — opus agent instead of LLM Externalizer
+DEFAULT_MAX_GROUP_SIZE = 10        # max files per review group
 
 # Linter extension groups
 LINTER_GROUPS: dict[str, list[str]] = {
@@ -112,6 +113,11 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
 
 def _has_tool(name: str) -> bool:
     return shutil.which(name) is not None
+
+
+def _short_id(index: int) -> str:
+    """Generate a short group ID like g01, g02, etc."""
+    return f"g{index:02d}"
 
 
 # -- Core steps ----------------------------------------------------------------
@@ -319,15 +325,168 @@ def filter_lint_errors(raw_file: Path) -> tuple[str, list[str]]:
     return str(errors_file), error_lines
 
 
+# -- Group splitting -----------------------------------------------------------
+
+
+def split_into_groups(
+    files: list[dict],
+    report_dir: Path,
+    max_group_size: int,
+) -> list[dict]:
+    """Split classified files into review groups and write per-group JSON files.
+
+    Each group gets a short ID (g01, g02, ...). The group JSON file is written
+    to report_dir/group-<id>.json and contains only the files for that group.
+    The orchestrator never sees individual file paths — only group file paths.
+
+    Grouping strategy:
+    - Large files get one group each (opus agent, 1 file per group)
+    - Normal files are batched by extension family up to max_group_size
+    - If a batch exceeds max_group_size, it's split into sub-groups
+
+    Returns list of group descriptors (no file paths, only group metadata).
+    """
+    groups: list[dict] = []
+    group_index = 0
+
+    # 1. Large files: one group per file (each needs its own opus agent)
+    large_files = [f for f in files if f["category"] == "large"]
+    for lf in large_files:
+        gid = _short_id(group_index)
+        group_index += 1
+        group_data = {
+            "group_id": gid,
+            "category": "large",
+            "file_count": 1,
+            "files": [lf],
+        }
+        group_path = report_dir / f"group-{gid}.json"
+        group_path.write_text(json.dumps(group_data, indent=2))
+        groups.append({
+            "group_id": gid,
+            "category": "large",
+            "review_with": "opus",
+            "file_count": 1,
+            "group_file": str(group_path),
+            "report_file": str(report_dir / f"review-{gid}.md"),
+            "fixes_file": str(report_dir / f"fixes-{gid}.md"),
+            "security_relevant": lf["security_relevant"],
+        })
+
+    # 2. Normal files: batch by extension family
+    normal_files = [f for f in files if f["category"] == "normal"]
+
+    # Group by linter family first for coherent review context
+    ext_to_family: dict[str, str] = {}
+    for family, exts in LINTER_GROUPS.items():
+        for ext in exts:
+            ext_to_family[ext] = family
+    # Files not matching any linter family go to "other"
+    by_family: dict[str, list[dict]] = {}
+    for nf in normal_files:
+        family = ext_to_family.get(nf["extension"], "other")
+        by_family.setdefault(family, []).append(nf)
+
+    for family, family_files in sorted(by_family.items()):
+        # Split into chunks of max_group_size
+        for chunk_start in range(0, len(family_files), max_group_size):
+            chunk = family_files[chunk_start:chunk_start + max_group_size]
+            gid = _short_id(group_index)
+            group_index += 1
+            group_data = {
+                "group_id": gid,
+                "category": "normal",
+                "family": family,
+                "file_count": len(chunk),
+                "files": chunk,
+            }
+            group_path = report_dir / f"group-{gid}.json"
+            group_path.write_text(json.dumps(group_data, indent=2))
+            any_security = any(cf["security_relevant"] for cf in chunk)
+            groups.append({
+                "group_id": gid,
+                "category": "normal",
+                "review_with": "llm_externalizer",
+                "family": family,
+                "file_count": len(chunk),
+                "group_file": str(group_path),
+                "report_file": str(report_dir / f"review-{gid}.md"),
+                "fixes_file": str(report_dir / f"fixes-{gid}.md"),
+                "security_relevant": any_security,
+            })
+
+    return groups
+
+
+# -- Lint error grouping -------------------------------------------------------
+
+
+def split_lint_errors_by_group(
+    error_lines: list[str],
+    groups: list[dict],
+    report_dir: Path,
+) -> dict[str, str]:
+    """Split lint errors into per-group error files.
+
+    Matches each error line to a group by checking if the file path in the
+    error line belongs to any file in the group. Returns {group_id: error_file_path}.
+    """
+    # Build a map: abs_path -> group_id
+    file_to_group: dict[str, str] = {}
+    for g in groups:
+        group_data = json.loads(Path(g["group_file"]).read_text())
+        for f in group_data["files"]:
+            file_to_group[f["abs_path"]] = g["group_id"]
+            file_to_group[f["path"]] = g["group_id"]
+
+    # Assign each error line to a group
+    group_errors: dict[str, list[str]] = {}
+    for line in error_lines:
+        # Error lines typically start with the file path before the first ":"
+        parts = line.split(":", 1)
+        if len(parts) < 2:
+            continue
+        candidate = parts[0].strip()
+        # Try matching against known files
+        matched_gid = file_to_group.get(candidate)
+        if not matched_gid:
+            # Try resolving the path
+            try:
+                resolved = str(Path(candidate).resolve())
+                matched_gid = file_to_group.get(resolved)
+            except (OSError, ValueError):
+                pass
+        if matched_gid:
+            group_errors.setdefault(matched_gid, []).append(line)
+
+    # Write per-group error files
+    result: dict[str, str] = {}
+    for gid, lines in group_errors.items():
+        err_file = report_dir / f"lint-errors-{gid}.txt"
+        err_file.write_text("\n".join(lines))
+        result[gid] = str(err_file)
+
+    return result
+
+
 # -- Main ----------------------------------------------------------------------
 
 
 def main() -> int:
     # Parse args
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
-    for i, arg in enumerate(sys.argv[1:], 1):
-        if arg == "--plugin-root" and i < len(sys.argv) - 1:
-            plugin_root = sys.argv[i + 1]
+    max_group_size = DEFAULT_MAX_GROUP_SIZE
+    args = sys.argv[1:]
+    i = 0
+    while i < len(args):
+        if args[i] == "--plugin-root" and i + 1 < len(args):
+            plugin_root = args[i + 1]
+            i += 2
+        elif args[i] == "--max-group-size" and i + 1 < len(args):
+            max_group_size = int(args[i + 1])
+            i += 2
+        else:
+            i += 1
 
     # Step 1: Recursion guard
     if check_recursion_guard():
@@ -361,17 +520,21 @@ def main() -> int:
         if count_script.is_file():
             _run([sys.executable, str(count_script), "--snapshot", str(snapshot_path)])
 
-    # Step 5: Lint
-    normal_files = [f for f in files if f["category"] == "normal"]
-    large_files = [f for f in files if f["category"] == "large"]
+    # Step 5: Split into groups and write per-group JSON files
+    groups = split_into_groups(files, report_dir, max_group_size)
+
+    # Step 6: Lint
     lint_groups = group_files_by_extension(files)
     raw_lint_path = run_linters(lint_groups, report_dir)
     errors_path, error_lines = filter_lint_errors(Path(raw_lint_path))
 
-    # Step 6: Security pass detection
-    needs_security = any(f["security_relevant"] for f in files)
+    # Step 7: Split lint errors into per-group files
+    lint_by_group = split_lint_errors_by_group(error_lines, groups, report_dir)
 
-    # Step 7: Build manifest
+    # Step 8: Security pass detection
+    needs_security = any(g["security_relevant"] for g in groups)
+
+    # Step 9: Build compact manifest — no file paths, only group file paths
     manifest = {
         "status": "proceed",
         "session": {
@@ -382,22 +545,26 @@ def main() -> int:
             "report_dir": str(report_dir),
             "snapshot_path": str(snapshot_path),
         },
-        "files": {
-            "total": len(files),
-            "normal": [f["abs_path"] for f in normal_files],
-            "large": [f["abs_path"] for f in large_files],
-            "all": [f["path"] for f in files],
-        },
+        "files_total": len(files),
+        "groups": [
+            {
+                "id": g["group_id"],
+                "category": g["category"],
+                "review_with": g["review_with"],
+                "file_count": g["file_count"],
+                "group_file": g["group_file"],
+                "report_file": g["report_file"],
+                "fixes_file": g["fixes_file"],
+                "lint_errors_file": lint_by_group.get(g["group_id"]),
+                "security_relevant": g["security_relevant"],
+            }
+            for g in groups
+        ],
         "lint": {
             "raw_file": raw_lint_path,
             "errors_file": errors_path,
             "error_count": len(error_lines),
             "has_errors": len(error_lines) > 0,
-            "files_with_errors": list({
-                line.split(":")[0]
-                for line in error_lines
-                if ":" in line and Path(line.split(":")[0]).is_file()
-            }),
         },
         "security_pass": needs_security,
     }
