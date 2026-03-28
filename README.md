@@ -118,7 +118,8 @@ Done. Summary reported to user.
 | **`lint-filter`** | Haiku agent that strips warnings from lint output, keeping only errors |
 | **LLM Externalizer** | External LLM (grok/gemini) reviews code for bugs — not Claude tokens |
 | **`finalize-session.py`** | Automates: token counting, session history, report cleanup |
-| **`count-tokens.py`** | Parses JSONL transcripts for per-model token breakdown |
+| **`count-tokens.py`** | Parses JSONL transcripts for per-model token breakdown (snapshot/delta/transcripts modes) |
+| **`log-subagent-tokens.py`** | SubagentStop hook — logs isolated token usage per subagent/worktree |
 | **`log-stop-failure.py`** | Logs API errors (rate limits, server errors) |
 | **`recheck-after-commit` rule** | Tells Claude when to trigger `/recheck` |
 

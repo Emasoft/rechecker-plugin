@@ -1,5 +1,5 @@
 {
-  "description": "Rechecker: error logging only",
+  "description": "Rechecker: error logging + subagent token tracking",
   "hooks": {
     "StopFailure": [
       {
@@ -8,6 +8,17 @@
           {
             "type": "command",
             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/log-stop-failure.py"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/log-subagent-tokens.py",
+            "async": true
           }
         ]
       }
