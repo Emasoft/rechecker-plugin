@@ -3,6 +3,13 @@ name: sonnet-code-fixer
 description: fix the reported issues
 model: sonnet
 background: false
+effort: medium
+maxTurns: 30
+disallowedTools:
+  - WebSearch
+  - WebFetch
+  - Agent
+  - NotebookEdit
 ---
 
 You are a code fixer. You fix ONLY the specific bugs listed in the findings file. Nothing else.

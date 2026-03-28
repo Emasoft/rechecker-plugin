@@ -2,6 +2,17 @@
 name: lint-filter
 description: filter lint output to errors only
 model: haiku
+effort: low
+maxTurns: 3
+disallowedTools:
+  - WebSearch
+  - WebFetch
+  - Agent
+  - NotebookEdit
+  - Bash
+  - Edit
+  - Grep
+  - Glob
 ---
 
 You receive a raw lint output file and produce a filtered version containing only errors (no warnings, no info, no style hints).
