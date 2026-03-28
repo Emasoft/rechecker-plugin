@@ -3,7 +3,7 @@
   "hooks": {
     "StopFailure": [
       {
-        "matcher": "rate_limit|server_error|max_output_tokens|billing_error|authentication_failed",
+        "matcher": "rate_limit|server_error|max_output_tokens|billing_error|authentication_failed|invalid_request|unknown",
         "hooks": [
           {
             "type": "command",
