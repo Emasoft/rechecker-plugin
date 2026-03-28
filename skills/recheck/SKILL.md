@@ -7,7 +7,7 @@ description: >
 
 ## Overview
 
-Automated code review and fix pipeline for the latest commit. Runs lint + 3 review passes + 1 conditional security pass, then commits fixes.
+Automated code review and fix pipeline for the latest commit. A triage script handles all mechanical work (file detection, linting, classification). The orchestrator only dispatches review agents from the manifest.
 
 ## Prerequisites
 
@@ -19,43 +19,32 @@ Copy this checklist and track your progress:
 
 ## Instructions
 
-1. **Recursion guard** — check if the latest commit is already a rechecker commit:
+1. **Run triage** — the triage script detects files, runs linters, classifies everything, and outputs a JSON manifest:
    ```bash
-   git log -1 --format=%s | grep -q '\[rechecker: skip\]' && echo "SKIP" || echo "PROCEED"
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/triage.py"
    ```
-   If `SKIP`, stop immediately.
+   If exit code is 3, stop (recursion guard or no files). If exit code is 0, read the JSON manifest from stdout and proceed. The manifest contains `session`, `files`, `lint`, and `security_pass` fields.
 
-2. **Identify changed files** — get the list of files changed in the last commit:
-   ```bash
-   git show --name-only --format= --diff-filter=d HEAD
-   ```
-   Skip: media, binary, fonts, data blobs, generated files, lock files, files >500KB. Split remaining into **normal** (<=250KB, LLM Externalizer) and **large** (>250KB, opus agent).
+2. **Fix lint errors** — if `manifest.lint.has_errors` is true, spawn `rechecker-plugin:sonnet-code-fixer` with `manifest.lint.files_with_errors` and `manifest.lint.errors_file`. Wait for completion.
 
-3. **Setup session** — generate IDs, create report folder, take token snapshot:
-   ```bash
-   RCK_UUID=$(python3 -c "import uuid; print(uuid.uuid4().hex[:12])") && RCK_START_TS=$(date -u +%Y-%m-%dT%H:%M:%S) && RCK_COMMIT=$(git rev-parse HEAD) && REPORT_DIR="reports_dev/rck-${RCK_UUID}" && mkdir -p "$REPORT_DIR" && echo "RCK_UUID=$RCK_UUID RCK_START_TS=$RCK_START_TS RCK_COMMIT=$RCK_COMMIT REPORT_DIR=$REPORT_DIR"
-   ```
-   Token calibration: read a small file (e.g. `.claude-plugin/plugin.json`), then:
-   ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/count-tokens.py" --snapshot "$REPORT_DIR/before-tokens.json"
-   ```
+3. **Review passes** — dispatch review agents using the pre-split file lists from the manifest. See [review-passes](review-passes.md) for instructions per pass. For `manifest.files.normal`: send to LLM Externalizer `code_task`. For `manifest.files.large`: spawn opus agent per file. After each pass with issues, spawn `rechecker-plugin:sonnet-code-fixer` and wait.
+   - Pass 1: correctness
+   - Pass 2: functional
+   - Pass 3: adversarial
+   - Pass 4: security (only if `manifest.security_pass` is true)
 
-4. **Lint pass** — run linters per file type (see [lint-commands](lint-commands.md) for commands), save to `$REPORT_DIR/pass0-lint-raw.txt`. Spawn `rechecker-plugin:lint-filter` agent to extract errors only. If errors found, spawn `rechecker-plugin:sonnet-code-fixer` to fix them.
-
-5. **Review passes (1-4)** — for each pass, review via LLM Externalizer (normal files) or opus agent (large files). See [review-passes](review-passes.md) for detailed instructions per pass. Pass 1: correctness. Pass 2: functional. Pass 3: adversarial. Pass 4: security (conditional — only if files touch auth/network/crypto/input). After each pass with issues, spawn `rechecker-plugin:sonnet-code-fixer` and wait for completion.
-
-6. **Commit fixes** — if any files were changed, stage only fixed files and commit:
+4. **Commit fixes** — if any files were changed, stage only fixed files and commit:
    ```bash
    git add <fixed-files>
    git commit -m "fix: apply rechecker fixes [rechecker: skip]"
    ```
 
-7. **Finalize session** — run the finalize script:
+5. **Finalize session** — use values from `manifest.session`:
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/finalize-session.py" \
-       --uuid "$RCK_UUID" --commit "$RCK_COMMIT" --start "$RCK_START_TS" \
-       --report-dir "$REPORT_DIR" --snapshot "$REPORT_DIR/before-tokens.json" \
-       --files-reviewed <N> --issues-found <N> --issues-fixed <N> [--commit-made]
+       --uuid "<session.uuid>" --commit "<session.commit>" --start "<session.started>" \
+       --report-dir "<session.report_dir>" --snapshot "<session.snapshot_path>" \
+       --files-reviewed <files.total> --issues-found <N> --issues-fixed <N> [--commit-made]
    ```
 
 ## Output
@@ -73,7 +62,7 @@ Reports: .rechecker/reports/<UUID>/
 
 ## Error Handling
 
-All stages fail-fast. If any linter, review, or fix step fails, the pipeline aborts and reports which step failed. No partial commits are made.
+All stages fail-fast. If triage or any review/fix step fails, the pipeline aborts and reports which step failed. No partial commits are made.
 
 ## Examples
 
@@ -84,13 +73,10 @@ All stages fail-fast. If any linter, review, or fix step fails, the pipeline abo
 
 ## Resources
 
-- [lint-commands](lint-commands.md) — linter commands per file type
-  - Overview
-  - Commands
 - [review-passes](review-passes.md) — review instructions per pass
-  - Shared Rules
-  - Large File Instructions
+  - Shared Rules (append to ALL pass instructions)
+  - Large File Instructions (>250KB, opus agent)
   - Pass 1 — Code correctness
   - Pass 2 — Functional correctness
   - Pass 3 — Adversarial review
-  - Pass 4 — Security audit
+  - Pass 4 — Security audit (conditional)
