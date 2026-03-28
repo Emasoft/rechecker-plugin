@@ -4,9 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- StopFailure matcher — add invalid_request and unknown error types
+- Tilde path expansion, error handling, UTC timestamps
+## [3.2.6] - 2026-03-28
+
 ### Features
 
 - Agent guardrails + expanded error logging (v2.1.85+ compat)
+
+### Miscellaneous Tasks
+
+- Bump version to 3.2.6
 ## [3.2.5] - 2026-03-28
 
 ### Bug Fixes
