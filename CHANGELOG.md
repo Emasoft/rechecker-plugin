@@ -6,12 +6,21 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Token snapshot missing — resolve plugin_root from __file__ fallback
+## [3.2.9] - 2026-03-28
+
+### Bug Fixes
+
 - Triage hardening — input validation, linter fallbacks, lint filter
 
 ### Features
 
 - Triage.py — automate file detection, linting, classification
 - Group-based dispatch — triage splits files into isolated groups
+
+### Miscellaneous Tasks
+
+- Bump version to 3.2.9
 ## [3.2.8] - 2026-03-28
 
 ### Features
