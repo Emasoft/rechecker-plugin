@@ -384,6 +384,7 @@ def split_into_groups(
             "category": "large",
             "review_with": "opus",
             "file_count": 1,
+            "input_files_paths": [lf["abs_path"]],
             "group_file": str(group_path),
             "report_file": str(report_dir / f"review-{gid}.md"),
             "fixes_file": str(report_dir / f"fixes-{gid}.md"),
@@ -426,6 +427,7 @@ def split_into_groups(
                 "review_with": "llm_externalizer",
                 "family": family,
                 "file_count": len(chunk),
+                "input_files_paths": [cf["abs_path"] for cf in chunk],
                 "group_file": str(group_path),
                 "report_file": str(report_dir / f"review-{gid}.md"),
                 "fixes_file": str(report_dir / f"fixes-{gid}.md"),
@@ -565,7 +567,21 @@ def main() -> int:
     # Step 8: Security pass detection
     needs_security = any(g["security_relevant"] for g in groups)
 
-    # Step 9: Build compact manifest — no file paths, only group file paths
+    # Step 9: Build grouped_input_files_paths with ---GROUP:id--- markers
+    # for LLM Externalizer. One code_task call processes ALL normal groups
+    # in parallel, producing per-group reports automatically.
+    # Large groups are excluded — they go to opus agents separately.
+    grouped_input: list[str] = []
+    for g in groups:
+        if g["review_with"] != "llm_externalizer":
+            continue
+        gid = g["group_id"]
+        grouped_input.append(f"---GROUP:{gid}---")
+        for fp in g.get("input_files_paths", []):
+            grouped_input.append(fp)
+        grouped_input.append(f"---/GROUP:{gid}---")
+
+    # Step 10: Build compact manifest
     manifest = {
         "status": "proceed",
         "session": {
@@ -578,6 +594,7 @@ def main() -> int:
             "plugin_root": plugin_root,
         },
         "files_total": len(files),
+        "grouped_input_files_paths": grouped_input,
         "groups": [
             {
                 "id": g["group_id"],
