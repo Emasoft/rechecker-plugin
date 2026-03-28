@@ -4,10 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- CPV remote validation in publish pipeline + skill restructure
+## [3.2.7] - 2026-03-28
+
 ### Bug Fixes
 
 - StopFailure matcher — add invalid_request and unknown error types
 - Tilde path expansion, error handling, UTC timestamps
+
+### Miscellaneous Tasks
+
+- Bump version to 3.2.7
 ## [3.2.6] - 2026-03-28
 
 ### Features
