@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""count-tokens.py — Count tokens via delta snapshots.
+"""count-tokens.py — Count tokens via delta snapshots or isolated transcripts.
 
-Takes two snapshots of cumulative session token usage (before and after),
-then computes the difference to get exact consumption for a specific operation.
+Three modes:
+    --snapshot <file>              Save cumulative totals (project + worktrees)
+    --delta <before-file>          Compute difference since a previous snapshot
+    --transcripts <path> [...]     Sum tokens from specific .jsonl files or dirs
 
-Streaming-only: reads only the last 1200 bytes of each JSONL line to extract
-token usage. Never loads full lines into memory. Uses mmap for zero-copy access.
+Streaming-only: reads only head (200B) + tail (1200B) of each JSONL line.
+Never loads full lines into memory. Uses mmap for zero-copy access.
 Handles 2GB+ transcripts with multi-MB screenshot lines.
-
-Usage:
-    python3 count-tokens.py --snapshot <output-file>   # save current totals
-    python3 count-tokens.py --delta <before-file>      # print delta since snapshot
 
 Output: JSON with per-model and total token counts.
 """
@@ -226,7 +224,8 @@ def aggregate_paths(paths: list[str]) -> dict[str, dict[str, int]]:
     """
     all_entries: list[dict] = []
     for p in paths:
-        target = Path(p)
+        # Expand ~ — SubagentStop events may provide tilde paths
+        target = Path(p).expanduser()
         if target.is_file() and target.suffix == ".jsonl":
             all_entries.extend(_parse_entries(target))
         elif target.is_dir():

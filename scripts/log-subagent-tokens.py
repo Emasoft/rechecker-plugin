@@ -29,9 +29,11 @@ def main() -> None:
     except json.JSONDecodeError:
         return
 
-    transcript_path = event.get("agent_transcript_path", "")
-    if not transcript_path:
+    transcript_path_raw = event.get("agent_transcript_path", "")
+    if not transcript_path_raw:
         return
+    # Expand ~ — Claude Code may provide tilde-prefixed paths
+    transcript_path = str(Path(transcript_path_raw).expanduser())
 
     agent_id = event.get("agent_id", "unknown")
     agent_type = event.get("agent_type", "unknown")
@@ -72,14 +74,19 @@ def main() -> None:
         "by_model": token_data.get("by_model", {}),
     }
 
-    # Append to .rechecker/subagent-tokens.jsonl in the project dir
-    project_dir = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
-    log_dir = Path(project_dir) / ".rechecker"
-    log_dir.mkdir(exist_ok=True)
-    log_file = log_dir / "subagent-tokens.jsonl"
+    # Append to .rechecker/subagent-tokens.jsonl in the project dir.
+    # Wrapped in try/except because this is an async fire-and-forget hook
+    # — silently failing is better than crashing and printing to stderr.
+    try:
+        project_dir = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
+        log_dir = Path(project_dir) / ".rechecker"
+        log_dir.mkdir(exist_ok=True)
+        log_file = log_dir / "subagent-tokens.jsonl"
 
-    with open(log_file, "a") as f:
-        f.write(json.dumps(record) + "\n")
+        with open(log_file, "a") as f:
+            f.write(json.dumps(record) + "\n")
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":

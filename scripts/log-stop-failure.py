@@ -7,7 +7,7 @@ StopFailure is notification-only: exit codes and output are ignored.
 
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -30,7 +30,7 @@ def main() -> None:
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / "rechecker_api_errors.log"
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         with open(log_file, "a") as f:
             f.write(f"[{ts}] StopFailure: error={error} details={error_details} session={session_id}\n")
     except OSError:
