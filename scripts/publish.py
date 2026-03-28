@@ -5,7 +5,7 @@ Pipeline stages (all fail-fast — any failure aborts):
   1. Check working tree is clean
   2. Run tests (pytest)
   3. Lint files (ruff)
-  4. Validate plugin (validate_plugin.py)
+  4. Validate plugin (CPV remote via uvx)
   5. Check version consistency across all sources
   6. Bump version in plugin.json, pyproject.toml, and __version__ vars
   7. Generate changelog (git-cliff)
@@ -298,14 +298,21 @@ def stage_lint(root: Path) -> None:
 
 
 def stage_validate(root: Path) -> None:
-    """Step 4: Validate plugin structure."""
-    cprint(f"\n{BOLD}[4/9] Validating plugin...{NC}")
-    validator = root / "scripts" / "validate_plugin.py"
-    if not validator.is_file():
-        cprint(f"  {YELLOW}No validate_plugin.py — skipping.{NC}")
-        return
-    run(["uv", "run", "python", str(validator), ".", "--strict"], cwd=root)
-    cprint(f"  {GREEN}Validation passed.{NC}")
+    """Step 4: Validate plugin via CPV remote execution (uvx)."""
+    cprint(f"\n{BOLD}[4/9] Validating plugin (CPV)...{NC}")
+    if not shutil.which("uvx"):
+        cprint(f"  {RED}uvx not found — install uv first (https://docs.astral.sh/uv/).{NC}")
+        sys.exit(1)
+    run(
+        [
+            "uvx",
+            "--from", "git+https://github.com/Emasoft/claude-plugins-validation",
+            "--with", "pyyaml",
+            "cpv-validate", str(root),
+        ],
+        cwd=root,
+    )
+    cprint(f"  {GREEN}CPV validation passed.{NC}")
 
 
 def stage_consistency(root: Path) -> None:
