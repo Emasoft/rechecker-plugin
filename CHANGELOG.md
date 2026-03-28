@@ -6,7 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Token counter — head+tail regex, worktree discovery, SubagentStop hook
+## [3.2.4] - 2026-03-26
+
+### Bug Fixes
+
 - Instruct LLM reviewers not to flag unknown library versions as bugs
+
+### Miscellaneous Tasks
+
+- Bump version to 3.2.4
 ## [3.2.3] - 2026-03-26
 
 ### Miscellaneous Tasks
