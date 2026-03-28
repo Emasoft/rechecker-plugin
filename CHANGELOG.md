@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Agent guardrails + expanded error logging (v2.1.85+ compat)
+## [3.2.5] - 2026-03-28
+
 ### Bug Fixes
 
 - Token counter — head+tail regex, worktree discovery, SubagentStop hook
+
+### Miscellaneous Tasks
+
+- Bump version to 3.2.5
 ## [3.2.4] - 2026-03-26
 
 ### Bug Fixes
