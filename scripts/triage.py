@@ -450,13 +450,16 @@ def split_lint_errors_by_group(
     Matches each error line to a group by checking if the file path in the
     error line belongs to any file in the group. Returns {group_id: error_file_path}.
     """
-    # Build a map: path -> group_id (re-reads the small group JSONs we just wrote)
+    # Build a map: path -> group_id from in-memory input_files_paths
     file_to_group: dict[str, str] = {}
     for g in groups:
+        gid = g["group_id"]
+        for fp in g.get("input_files_paths", []):
+            file_to_group[fp] = gid
+        # Also read the group JSON for relative paths (used by linter output)
         group_data = json.loads(Path(g["group_file"]).read_text())
         for f in group_data["files"]:
-            file_to_group[f["abs_path"]] = g["group_id"]
-            file_to_group[f["path"]] = g["group_id"]
+            file_to_group[f["path"]] = gid
 
     # Assign each error line to a group
     group_errors: dict[str, list[str]] = {}
@@ -571,15 +574,23 @@ def main() -> int:
     # for LLM Externalizer. One code_task call processes ALL normal groups
     # in parallel, producing per-group reports automatically.
     # Large groups are excluded — they go to opus agents separately.
+    # Also build a security-only variant for pass 4.
     grouped_input: list[str] = []
+    security_grouped_input: list[str] = []
     for g in groups:
         if g["review_with"] != "llm_externalizer":
             continue
         gid = g["group_id"]
-        grouped_input.append(f"---GROUP:{gid}---")
-        for fp in g.get("input_files_paths", []):
-            grouped_input.append(fp)
-        grouped_input.append(f"---/GROUP:{gid}---")
+        marker_open = f"---GROUP:{gid}---"
+        marker_close = f"---/GROUP:{gid}---"
+        paths = g.get("input_files_paths", [])
+        grouped_input.append(marker_open)
+        grouped_input.extend(paths)
+        grouped_input.append(marker_close)
+        if g["security_relevant"]:
+            security_grouped_input.append(marker_open)
+            security_grouped_input.extend(paths)
+            security_grouped_input.append(marker_close)
 
     # Step 10: Build compact manifest
     manifest = {
@@ -595,6 +606,7 @@ def main() -> int:
         },
         "files_total": len(files),
         "grouped_input_files_paths": grouped_input,
+        "security_grouped_input_files_paths": security_grouped_input,
         "groups": [
             {
                 "id": g["group_id"],

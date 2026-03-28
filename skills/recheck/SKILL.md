@@ -23,15 +23,15 @@ Copy this checklist and track your progress:
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/triage.py"
    ```
-   Exit 3 = skip (recursion guard or no files). Exit 0 = read JSON manifest from stdout. The manifest contains `session`, `groups[]`, `lint`, and `security_pass`. Each group has: `id`, `group_file` (path to JSON with file list), `report_file`, `fixes_file`, `lint_errors_file`.
+   Exit 3 = skip (recursion guard or no files). Exit 0 = read JSON manifest from stdout. The manifest contains: `session`, `files_total`, `grouped_input_files_paths` (array with GROUP markers for LLM Externalizer), `security_grouped_input_files_paths` (same but only security-relevant groups), `groups[]`, `lint`, `security_pass`. Each group has: `id`, `group_file`, `report_file`, `fixes_file`, `lint_errors_file`, `review_with`, `security_relevant`.
 
 2. **Fix lint errors** — for each group where `lint_errors_file` is not null, spawn `rechecker-plugin:sonnet-code-fixer` with the group's `lint_errors_file` and `group_file`. The agent reads only its own group's files and errors.
 
-3. **Review passes** — for each pass (see [review-passes](review-passes.md)), dispatch reviews using the manifest's pre-built arrays. For all normal groups at once: pass `manifest.grouped_input_files_paths` directly as `input_files_paths` to LLM Externalizer `code_task`. The array contains `---GROUP:id---` markers that automatically produce per-group reports. For `review_with: "opus"` groups: spawn opus agent per group, pass `group_file` in the prompt. After each pass, for groups with issues, spawn `rechecker-plugin:sonnet-code-fixer` with `group_file` + the group's report, writing to `fixes_file`.
-   - Pass 1: correctness
-   - Pass 2: functional
-   - Pass 3: adversarial
-   - Pass 4: security (only groups where `security_relevant` is true)
+3. **Review passes** — for each pass (see [review-passes](review-passes.md)), dispatch reviews using the manifest's pre-built arrays. If `grouped_input_files_paths` is non-empty, pass it as `input_files_paths` to one LLM Externalizer `code_task` call — the `---GROUP:id---` markers produce per-group reports automatically. For `review_with: "opus"` groups: spawn opus agent per group, pass `group_file` in the prompt. After each pass, for groups with issues, spawn `rechecker-plugin:sonnet-code-fixer` with `group_file` + the group's report, writing to `fixes_file`.
+   - Pass 1: correctness — use `grouped_input_files_paths`
+   - Pass 2: functional — use `grouped_input_files_paths`
+   - Pass 3: adversarial — use `grouped_input_files_paths`
+   - Pass 4: security — use `security_grouped_input_files_paths` (only security-relevant groups). Skip if empty.
 
 4. **Commit fixes** — if any files changed, stage only fixed files and commit:
    ```bash
