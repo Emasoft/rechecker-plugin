@@ -216,8 +216,19 @@ def run_linters(lint_groups: dict[str, list[str]], report_dir: Path) -> str:
                     output_lines.append(r.stdout)
 
         elif group == "javascript":
+            # Try bunx first (fast, bun-native), fall back to npx (node)
             if _has_tool("bunx"):
                 r = _run(["bunx", "--bun", "eslint"] + files)
+                if r.stdout.strip():
+                    output_lines.append(r.stdout)
+                r = _run(["bunx", "--bun", "tsc", "--noEmit"])
+                if r.stdout.strip():
+                    output_lines.append(r.stdout)
+            elif _has_tool("npx"):
+                r = _run(["npx", "--yes", "eslint"] + files)
+                if r.stdout.strip():
+                    output_lines.append(r.stdout)
+                r = _run(["npx", "--yes", "tsc", "--noEmit"])
                 if r.stdout.strip():
                     output_lines.append(r.stdout)
 
@@ -277,6 +288,10 @@ def run_linters(lint_groups: dict[str, list[str]], report_dir: Path) -> str:
                 r = _run(["bunx", "--bun", "stylelint"] + files)
                 if r.stdout.strip():
                     output_lines.append(r.stdout)
+            elif _has_tool("npx"):
+                r = _run(["npx", "--yes", "stylelint"] + files)
+                if r.stdout.strip():
+                    output_lines.append(r.stdout)
 
         elif group == "rust":
             if _has_tool("cargo") and Path("Cargo.toml").is_file():
@@ -313,8 +328,10 @@ def filter_lint_errors(raw_file: Path) -> tuple[str, list[str]]:
         # Skip warnings/notes/info
         if any(w in line_lower for w in [": warning:", ": note:", ": info:", "warning ", "(w"]):
             continue
-        # Keep errors
-        if any(e in line_lower for e in [": error:", "error ", "(e", "(f"]):
+        # Keep errors — ruff codes start with E/F followed by digits like (E501), (F401)
+        if ": error:" in line_lower or ": error " in line_lower:
+            error_lines.append(line)
+        elif re.search(r"\([EF]\d{3}", line):
             error_lines.append(line)
 
     if not error_lines:
@@ -431,7 +448,7 @@ def split_lint_errors_by_group(
     Matches each error line to a group by checking if the file path in the
     error line belongs to any file in the group. Returns {group_id: error_file_path}.
     """
-    # Build a map: abs_path -> group_id
+    # Build a map: path -> group_id (re-reads the small group JSONs we just wrote)
     file_to_group: dict[str, str] = {}
     for g in groups:
         group_data = json.loads(Path(g["group_file"]).read_text())
@@ -477,13 +494,25 @@ def main() -> int:
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
     max_group_size = DEFAULT_MAX_GROUP_SIZE
     args = sys.argv[1:]
+
+    if "--help" in args or "-h" in args:
+        print(__doc__)
+        return 0
+
     i = 0
     while i < len(args):
         if args[i] == "--plugin-root" and i + 1 < len(args):
             plugin_root = args[i + 1]
             i += 2
         elif args[i] == "--max-group-size" and i + 1 < len(args):
-            max_group_size = int(args[i + 1])
+            try:
+                max_group_size = int(args[i + 1])
+            except ValueError:
+                print(f"error: --max-group-size must be an integer, got: {args[i + 1]}", file=sys.stderr)
+                return 1
+            if max_group_size < 1:
+                print("error: --max-group-size must be >= 1", file=sys.stderr)
+                return 1
             i += 2
         else:
             i += 1

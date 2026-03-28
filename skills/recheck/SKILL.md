@@ -27,7 +27,7 @@ Copy this checklist and track your progress:
 
 2. **Fix lint errors** — for each group where `lint_errors_file` is not null, spawn `rechecker-plugin:sonnet-code-fixer` with the group's `lint_errors_file` and `group_file`. The agent reads only its own group's files and errors.
 
-3. **Review passes** — for each pass (see [review-passes](review-passes.md)), dispatch agents per group. For `category: "normal"` groups: send `group_file` path to LLM Externalizer `code_task` (the agent reads the group JSON to get file paths). For `category: "large"` groups: spawn opus agent with `group_file`. Each agent writes findings to its `report_file`. After each pass, for groups with issues, spawn `rechecker-plugin:sonnet-code-fixer` with `group_file` + `report_file`, writing to `fixes_file`.
+3. **Review passes** — for each pass (see [review-passes](review-passes.md)), dispatch agents per group. For `review_with: "llm_externalizer"` groups: read `group_file`, extract `abs_path` values from its `files[]` array, pass them as `input_files_paths` to LLM Externalizer `code_task`. For `review_with: "opus"` groups: spawn opus agent, pass `group_file` path in the prompt. Each agent writes findings to the group's `report_file`. After each pass, for groups with issues, spawn `rechecker-plugin:sonnet-code-fixer` with `group_file` + `report_file`, writing to `fixes_file`.
    - Pass 1: correctness
    - Pass 2: functional
    - Pass 3: adversarial
