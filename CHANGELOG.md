@@ -4,9 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Triage hardening — input validation, linter fallbacks, lint filter
+
+### Features
+
+- Triage.py — automate file detection, linting, classification
+- Group-based dispatch — triage splits files into isolated groups
+## [3.2.8] - 2026-03-28
+
 ### Features
 
 - CPV remote validation in publish pipeline + skill restructure
+
+### Miscellaneous Tasks
+
+- Bump version to 3.2.8
 ## [3.2.7] - 2026-03-28
 
 ### Bug Fixes
