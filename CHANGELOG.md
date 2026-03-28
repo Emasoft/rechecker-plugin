@@ -4,9 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Use LLM Externalizer ---GROUP:id--- markers for per-group reports
+## [3.2.10] - 2026-03-28
+
 ### Bug Fixes
 
 - Token snapshot missing — resolve plugin_root from __file__ fallback
+
+### Miscellaneous Tasks
+
+- Bump version to 3.2.10
 ## [3.2.9] - 2026-03-28
 
 ### Bug Fixes
