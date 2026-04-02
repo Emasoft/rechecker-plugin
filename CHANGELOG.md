@@ -6,7 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Publish.py git-add-A → explicit files; update README for triage
+## [3.2.13] - 2026-04-02
+
+### Bug Fixes
+
 - Add model aliases for short-form IDs (opus/sonnet/haiku)
+
+### Miscellaneous Tasks
+
+- Bump version to 3.2.13
 ## [3.2.12] - 2026-03-28
 
 ### Bug Fixes
