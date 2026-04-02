@@ -75,35 +75,29 @@ Claude checks the rule: >=5 files or >=50KB?
 /recheck skill runs (blocking)
       |
       v
-Step 1: Identify changed files, filter non-code, split by size
+triage.py (one script does all mechanical work)
+  |- Recursion guard check
+  |- Detect changed files, filter non-code, classify by size
+  |- Split into groups (max 10 files each, by extension family)
+  |- Run linters (ruff/mypy/eslint/tsc/shellcheck/etc.)
+  |- Filter lint errors (Python, no haiku agent needed)
+  |- Detect security-relevant groups
+  |- Write per-group JSON files + token snapshot
+  |- Output compact manifest with ---GROUP:id--- markers
       |
       v
-Step 2: Generate session UUID, record commit hash + timestamp
+Orchestrator reads manifest, dispatches:
+  |- Lint fix: sonnet-code-fixer per group with errors
+  |- Pass 1-3: one code_task call with GROUP markers → per-group reports
+  |- Pass 4 (security): only security-relevant groups
+  |- Large files (>250KB): opus agent per file
+  |- Each pass: sonnet-code-fixer for groups with issues
       |
       v
-Step 3: LINT PASS
-        ruff/mypy (Python) or eslint/tsc (JS/TS)
-        --> haiku lint-filter strips warnings
-        --> sonnet fixer fixes errors only
+Commit fixes with [rechecker: skip] marker
       |
       v
-Step 4: REVIEW PASSES (3 mandatory + 1 conditional)
-        |
-        |- Pass 1: Code correctness (syntax, logic, race conditions)
-        |- Pass 2: Functional correctness (does it do what it should?)
-        |- Pass 3: Adversarial review (injection, exhaustion, corruption)
-        |- Pass 4: Security audit (only if files touch auth/network/crypto/etc.)
-        |
-        Each pass: LLM Externalizer review --> sonnet fixer
-        Files >250KB: opus[1m] agent instead of LLM Externalizer
-        Files >500KB: skipped
-      |
-      v
-Step 5: Commit fixes with [rechecker: skip] marker
-      |
-      v
-Step 6: finalize-session.py
-        --> count tokens, write history.jsonl, move reports
+finalize-session.py → count tokens, write history, move reports
       |
       v
 Done. Summary reported to user.
@@ -113,14 +107,14 @@ Done. Summary reported to user.
 
 | Component | What It Does |
 |-----------|-------------|
-| **`/recheck` skill** | The full pipeline — lint, 3+1 review passes, commit, finalize |
+| **`/recheck` skill** | The full pipeline — triage, lint, 3+1 review passes, commit, finalize |
+| **`triage.py`** | Detects files, lints, classifies, splits into groups, outputs manifest |
 | **`sonnet-code-fixer`** | Sonnet agent that fixes reported issues using Serena MCP |
-| **`lint-filter`** | Haiku agent that strips warnings from lint output, keeping only errors |
 | **LLM Externalizer** | External LLM (grok/gemini) reviews code for bugs — not Claude tokens |
 | **`finalize-session.py`** | Automates: token counting, session history, report cleanup |
 | **`count-tokens.py`** | Parses JSONL transcripts for per-model token breakdown (snapshot/delta/transcripts modes) |
 | **`log-subagent-tokens.py`** | SubagentStop hook — logs isolated token usage per subagent/worktree |
-| **`log-stop-failure.py`** | Logs API errors (rate limits, server errors) |
+| **`log-stop-failure.py`** | Logs API errors (rate limits, server errors, auth failures) |
 | **`recheck-after-commit` rule** | Tells Claude when to trigger `/recheck` |
 
 ### Review Pass Details
@@ -160,20 +154,23 @@ rechecker-plugin/
 ├── .claude-plugin/
 │   └── plugin.json              # Plugin manifest
 ├── hooks/
-│   └── hooks.json               # StopFailure error logging
+│   └── hooks.json               # StopFailure + SubagentStop hooks
 ├── agents/
 │   ├── sonnet-code-fixer.md     # Sonnet fixer (Serena MCP + Grepika)
-│   └── lint-filter.md           # Haiku lint output filter
+│   └── lint-filter.md           # Haiku lint output filter (fallback)
 ├── rules/
 │   └── recheck-after-commit.md  # Auto-trigger rule
 ├── skills/
 │   └── recheck/
-│       └── SKILL.md             # /recheck pipeline
+│       ├── SKILL.md             # /recheck pipeline orchestration
+│       └── review-passes.md     # Review instructions per pass
 ├── scripts/
+│   ├── triage.py                # File detection, lint, classify, group split
 │   ├── finalize-session.py      # Token counting + history + cleanup
 │   ├── count-tokens.py          # JSONL transcript parser
+│   ├── log-subagent-tokens.py   # SubagentStop token logger
 │   ├── log-stop-failure.py      # API error logger
-│   └── publish.py               # Dev: lint, bump, tag, release
+│   └── publish.py               # Dev: lint, validate, bump, tag, release
 └── README.md
 ```
 

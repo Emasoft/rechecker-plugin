@@ -361,7 +361,18 @@ def stage_commit_and_push(root: Path, new_ver: str, dry_run: bool) -> None:
         cprint(f"  Would tag: {tag}")
         cprint("  Would push: origin HEAD --tags")
         return
-    run(["git", "add", "-A"], cwd=root)
+    # Stage only the files that the publish pipeline modifies
+    version_files = [
+        ".claude-plugin/plugin.json",
+        "pyproject.toml",
+        "README.md",
+        "CHANGELOG.md",
+    ]
+    # Also stage any __version__ files that were updated
+    for py in (root / "scripts").glob("*.py"):
+        version_files.append(str(py.relative_to(root)))
+    existing = [f for f in version_files if (root / f).is_file()]
+    run(["git", "add"] + existing, cwd=root)
     run(["git", "commit", "-m", f"chore: bump version to {new_ver}"], cwd=root)
     run(["git", "tag", "-a", tag, "-m", f"Release {tag}"], cwd=root)
     run(["git", "push", "origin", "HEAD", "--tags"], cwd=root)
