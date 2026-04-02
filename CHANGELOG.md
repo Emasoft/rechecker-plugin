@@ -6,7 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Add model aliases for short-form IDs (opus/sonnet/haiku)
+## [3.2.12] - 2026-03-28
+
+### Bug Fixes
+
 - Audit fixes — security grouped array, lint grouping, manifest docs
+
+### Miscellaneous Tasks
+
+- Bump version to 3.2.12
 ## [3.2.11] - 2026-03-28
 
 ### Features
