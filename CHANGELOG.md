@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.2.15] - 2026-04-10
+
+### Bug Fixes
+
+- Publish.py changelog/release-notes — use git-cliff properly
+- Publish.py — use cpv-remote-validate wrapper for CPV validation
+- Publish.py — use 'plugin' command for cpv-remote-validate
 ## [3.2.14] - 2026-04-10
 
 ### Bug Fixes
