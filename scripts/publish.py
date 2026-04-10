@@ -60,10 +60,22 @@ def run(
     *,
     check: bool = True,
     capture: bool = False,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a command, stream output, fail-fast on error."""
     cprint(f"  {BLUE}$ {' '.join(cmd)}{NC}")
-    result = subprocess.run(cmd, cwd=str(cwd) if cwd else None, text=True, capture_output=capture, timeout=300)
+    run_env = None
+    if env is not None:
+        run_env = os.environ.copy()
+        run_env.update(env)
+    result = subprocess.run(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        text=True,
+        capture_output=capture,
+        timeout=300,
+        env=run_env,
+    )
     if check and result.returncode != 0:
         cprint(f"  {RED}Command failed (exit {result.returncode}){NC}")
         sys.exit(result.returncode)
@@ -255,6 +267,32 @@ def do_bump(root: Path, new_ver: str, dry_run: bool = False) -> bool:
 # -- Pipeline stages -----------------------------------------------------------
 
 
+def ensure_pre_push_hook(root: Path) -> None:
+    """Install or refresh the pre-push hook that blocks unauthorized pushes.
+
+    The canonical hook lives at scripts/git-hooks/pre-push (git-tracked).
+    It is copied to .git/hooks/pre-push on every publish run so it stays
+    in sync with the tracked version. Hook rejects any push that lacks
+    the RECHECKER_PUBLISH_OK=1 sentinel env var.
+    """
+    src = root / "scripts" / "git-hooks" / "pre-push"
+    if not src.is_file():
+        cprint(f"  {RED}Missing scripts/git-hooks/pre-push — cannot enforce push policy.{NC}")
+        sys.exit(1)
+    # Resolve .git/hooks path (handles worktrees via rev-parse)
+    r = subprocess.run(
+        ["git", "rev-parse", "--git-path", "hooks"],
+        cwd=str(root), capture_output=True, text=True, check=True,
+    )
+    hooks_dir = Path(r.stdout.strip())
+    if not hooks_dir.is_absolute():
+        hooks_dir = root / hooks_dir
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    dst = hooks_dir / "pre-push"
+    shutil.copyfile(src, dst)
+    dst.chmod(0o755)
+
+
 def stage_check_clean(root: Path) -> None:
     """Step 1: Working tree must be clean. Auto-commits uv.lock if it's the only dirty file."""
     cprint(f"\n{BOLD}[1/9] Checking working tree...{NC}")
@@ -275,26 +313,32 @@ def stage_check_clean(root: Path) -> None:
 
 
 def stage_tests(root: Path) -> None:
-    """Step 2: Run pytest."""
+    """Step 2: Run pytest. REQUIRED — cannot be skipped.
+
+    Aborts the pipeline if no test files exist. Publishing without tests
+    is considered unsafe and will not be allowed.
+    """
     cprint(f"\n{BOLD}[2/9] Running tests...{NC}")
     test_dir = root / "tests"
     if not test_dir.is_dir() or not list(test_dir.glob("test_*.py")):
-        cprint(f"  {YELLOW}No test files found — skipping.{NC}")
-        return
+        cprint(f"  {RED}ABORT: no test files found in tests/.{NC}")
+        cprint(f"  {RED}Publishing without tests is not allowed. Add tests first.{NC}")
+        sys.exit(1)
     run(["uv", "run", "pytest", "tests/", "-x", "-q", "--tb=short"], cwd=root)
     cprint(f"  {GREEN}Tests passed.{NC}")
 
 
 def stage_lint(root: Path) -> None:
-    """Step 3: Lint with ruff + type check with mypy."""
+    """Step 3: Lint with ruff + type check with mypy. REQUIRED.
+
+    Both ruff and mypy must pass. Mypy is never skipped — if unavailable,
+    the pipeline aborts.
+    """
     cprint(f"\n{BOLD}[3/9] Linting...{NC}")
-    run(["uv", "run", "ruff", "check", "scripts/"], cwd=root)
+    run(["uv", "run", "ruff", "check", "scripts/", "tests/"], cwd=root)
     cprint(f"  {GREEN}Ruff passed.{NC}")
-    if shutil.which("mypy") or (root / ".venv").is_dir():
-        run(["uv", "run", "mypy", "scripts/", "--ignore-missing-imports"], cwd=root)
-        cprint(f"  {GREEN}Mypy passed.{NC}")
-    else:
-        cprint(f"  {YELLOW}mypy not available — skipping type check.{NC}")
+    run(["uv", "run", "mypy", "scripts/", "--ignore-missing-imports"], cwd=root)
+    cprint(f"  {GREEN}Mypy passed.{NC}")
 
 
 def stage_validate(root: Path) -> None:
@@ -416,7 +460,14 @@ def stage_commit_and_push(root: Path, new_ver: str, dry_run: bool) -> None:
     run(["git", "add"] + existing, cwd=root)
     run(["git", "commit", "-m", f"chore: bump version to {new_ver}"], cwd=root)
     run(["git", "tag", "-a", tag, "-m", f"Release {tag}"], cwd=root)
-    run(["git", "push", "origin", "HEAD", "--tags"], cwd=root)
+    # Sentinel env var lets the pre-push hook verify this push came from
+    # publish.py (i.e. validation passed). Direct `git push` without
+    # this var is rejected by the hook.
+    run(
+        ["git", "push", "origin", "HEAD", "--tags"],
+        cwd=root,
+        env={"RECHECKER_PUBLISH_OK": "1"},
+    )
     cprint(f"  {GREEN}Pushed {tag}.{NC}")
 
 
@@ -467,7 +518,6 @@ def main() -> int:
     bump_group.add_argument("--minor", action="store_const", dest="bump", const="minor")
     bump_group.add_argument("--major", action="store_const", dest="bump", const="major")
     parser.add_argument("--dry-run", action="store_true", help="Preview only, no changes")
-    parser.add_argument("--skip-tests", action="store_true", help="Skip pytest step")
     args = parser.parse_args()
 
     root = get_repo_root()
@@ -485,9 +535,12 @@ def main() -> int:
     if args.dry_run:
         cprint(f"{YELLOW}(dry-run mode — no changes will be made){NC}")
 
+    # Install/refresh the pre-push hook on every run so it can't drift
+    # out of sync with the canonical version at scripts/git-hooks/pre-push.
+    ensure_pre_push_hook(root)
+
     stage_check_clean(root)
-    if not args.skip_tests:
-        stage_tests(root)
+    stage_tests(root)
     stage_lint(root)
     stage_validate(root)
     stage_consistency(root)

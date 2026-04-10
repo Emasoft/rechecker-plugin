@@ -1,0 +1,45 @@
+#!/bin/sh
+# pre-push hook for rechecker-plugin
+#
+# Blocks any `git push` that is NOT initiated by scripts/publish.py.
+# publish.py sets RECHECKER_PUBLISH_OK=1 before calling `git push`,
+# proving it has already passed lint, tests, CPV validation, and
+# version consistency checks.
+#
+# Direct manual pushes are rejected with an instructive error.
+# To bypass (e.g. emergency hotfix), set RECHECKER_PUBLISH_OK=1
+# in the environment — but you are then responsible for the safety
+# guarantees the publish pipeline normally enforces.
+
+if [ "${RECHECKER_PUBLISH_OK:-}" = "1" ]; then
+    exit 0
+fi
+
+# Read the push refs from stdin so git doesn't block
+cat > /dev/null
+
+cat >&2 <<'EOF'
+ERROR: Direct `git push` is blocked by the rechecker-plugin pre-push hook.
+
+Pushing to GitHub is only allowed via the publish pipeline:
+
+    uv run python scripts/publish.py --patch   # or --minor / --major
+
+The pipeline enforces:
+  1. Clean working tree
+  2. All tests passing (pytest)
+  3. Lint clean (ruff + mypy)
+  4. CPV validation (0 MAJOR/CRITICAL issues)
+  5. Version consistency across plugin.json / pyproject.toml / README
+  6. Changelog updated via git-cliff with the new tag
+  7. Atomic commit + tag + push
+
+If you are absolutely sure you need to bypass this hook, run:
+
+    RECHECKER_PUBLISH_OK=1 git push ...
+
+But only do this for emergency fixes. All normal releases MUST
+go through publish.py so that nothing unvalidated reaches GitHub.
+EOF
+
+exit 1
