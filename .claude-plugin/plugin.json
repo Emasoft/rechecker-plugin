@@ -1,6 +1,6 @@
 {
   "name": "rechecker-plugin",
-  "version": "3.2.16",
+  "version": "3.2.17",
   "description": "Prompts Claude to review and fix code after git commits using a blocking /recheck skill",
   "author": {
     "name": "Emasoft",

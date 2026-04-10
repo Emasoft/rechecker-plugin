@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.2.17] - 2026-04-10
+
+### Bug Fixes
+
+- Pre-push hook uses process ancestry, not env vars
 ## [3.2.16] - 2026-04-10
 
 ### Features
