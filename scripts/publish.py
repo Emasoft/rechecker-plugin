@@ -335,8 +335,14 @@ def stage_bump(root: Path, new_ver: str, dry_run: bool) -> None:
     cprint(f"  {GREEN}Version bumped to {new_ver}.{NC}")
 
 
-def stage_changelog(root: Path, dry_run: bool) -> None:
-    """Step 7: Generate changelog with git-cliff."""
+def stage_changelog(root: Path, new_ver: str, dry_run: bool) -> None:
+    """Step 7: Generate changelog with git-cliff.
+
+    Uses --unreleased --tag v<new_ver> so all commits since the last tag
+    are recorded under the new version section (not "[Unreleased]"). The
+    --prepend flag only adds the new section to the top, preserving the
+    existing history instead of regenerating the whole file.
+    """
     cprint(f"\n{BOLD}[7/9] Generating changelog...{NC}")
     if not shutil.which("git-cliff"):
         cprint(f"  {YELLOW}git-cliff not installed — skipping changelog.{NC}")
@@ -345,11 +351,42 @@ def stage_changelog(root: Path, dry_run: bool) -> None:
     if not cliff_toml.is_file():
         cprint(f"  {YELLOW}No cliff.toml — skipping changelog.{NC}")
         return
+    tag = f"v{new_ver}"
+    changelog_file = root / "CHANGELOG.md"
     if dry_run:
-        cprint("  Would run: git-cliff -o CHANGELOG.md")
+        cprint(f"  Would run: git-cliff --unreleased --tag {tag} --prepend CHANGELOG.md")
         return
-    run(["git-cliff", "-o", "CHANGELOG.md"], cwd=root)
-    cprint(f"  {GREEN}Changelog generated.{NC}")
+    if changelog_file.is_file():
+        # Prepend new version section to existing changelog
+        run(["git-cliff", "--unreleased", "--tag", tag, "--prepend", "CHANGELOG.md"], cwd=root)
+    else:
+        # No existing changelog — generate full history with the new tag
+        run(["git-cliff", "--tag", tag, "-o", "CHANGELOG.md"], cwd=root)
+    cprint(f"  {GREEN}Changelog generated for {tag}.{NC}")
+
+
+def extract_release_notes(root: Path, new_ver: str) -> str | None:
+    """Extract the section for <new_ver> from CHANGELOG.md for release notes.
+
+    Returns the body between the ``## [X.Y.Z]`` header and the next ``##``
+    header (or EOF). Returns None if the section cannot be found.
+    """
+    changelog_file = root / "CHANGELOG.md"
+    if not changelog_file.is_file():
+        return None
+    try:
+        content = changelog_file.read_text()
+    except OSError:
+        return None
+    # Match ## [new_ver] or ## [vnew_ver] — header line starts the section
+    pattern = re.compile(
+        rf"^## \[v?{re.escape(new_ver)}\][^\n]*\n(.*?)(?=\n## \[|\Z)",
+        re.DOTALL | re.MULTILINE,
+    )
+    m = pattern.search(content)
+    if not m:
+        return None
+    return m.group(1).strip()
 
 
 def stage_commit_and_push(root: Path, new_ver: str, dry_run: bool) -> None:
@@ -380,7 +417,12 @@ def stage_commit_and_push(root: Path, new_ver: str, dry_run: bool) -> None:
 
 
 def stage_gh_release(root: Path, new_ver: str, dry_run: bool) -> None:
-    """Step 9: Create GitHub release via gh CLI."""
+    """Step 9: Create GitHub release via gh CLI.
+
+    Extracts only the new version's section from CHANGELOG.md as release
+    notes — the entire changelog is not used because gh release uses it
+    verbatim as the body, which would duplicate all historical entries.
+    """
     cprint(f"\n{BOLD}[9/9] Creating GitHub release...{NC}")
     tag = f"v{new_ver}"
     if not shutil.which("gh"):
@@ -389,14 +431,22 @@ def stage_gh_release(root: Path, new_ver: str, dry_run: bool) -> None:
     if dry_run:
         cprint(f"  Would create release: {tag}")
         return
-    changelog_file = root / "CHANGELOG.md"
     args = ["gh", "release", "create", tag, "--title", tag]
-    if changelog_file.is_file():
-        # Use changelog file as release notes (don't combine with --generate-notes)
-        args.extend(["--notes-file", str(changelog_file)])
+    notes = extract_release_notes(root, new_ver)
+    if notes:
+        # Write the section to a temp file and use --notes-file
+        notes_file = root / ".release-notes.tmp.md"
+        notes_file.write_text(notes)
+        try:
+            args.extend(["--notes-file", str(notes_file)])
+            run(args, cwd=root, check=False)
+        finally:
+            if notes_file.is_file():
+                notes_file.unlink()
     else:
+        # Fallback: let gh generate notes from commits
         args.append("--generate-notes")
-    run(args, cwd=root, check=False)
+        run(args, cwd=root, check=False)
     cprint(f"  {GREEN}Release created.{NC}")
 
 
@@ -438,7 +488,7 @@ def main() -> int:
     stage_validate(root)
     stage_consistency(root)
     stage_bump(root, new_ver, args.dry_run)
-    stage_changelog(root, args.dry_run)
+    stage_changelog(root, new_ver, args.dry_run)
     stage_commit_and_push(root, new_ver, args.dry_run)
     stage_gh_release(root, new_ver, args.dry_run)
 

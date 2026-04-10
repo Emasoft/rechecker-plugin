@@ -2,11 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [3.2.14] - 2026-04-10
 
 ### Bug Fixes
 
 - Publish.py git-add-A → explicit files; update README for triage
+
 ## [3.2.13] - 2026-04-02
 
 ### Bug Fixes
