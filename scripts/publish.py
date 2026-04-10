@@ -312,7 +312,7 @@ def stage_validate(root: Path) -> None:
             "uvx",
             "--from", "git+https://github.com/Emasoft/claude-plugins-validation",
             "--with", "pyyaml",
-            "cpv-remote-validate", "cpv-validate", str(root),
+            "cpv-remote-validate", "plugin", str(root),
         ],
         cwd=root,
     )
