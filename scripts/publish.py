@@ -298,7 +298,11 @@ def stage_lint(root: Path) -> None:
 
 
 def stage_validate(root: Path) -> None:
-    """Step 4: Validate plugin via CPV remote execution (uvx)."""
+    """Step 4: Validate plugin via CPV remote execution (uvx).
+
+    Uses cpv-remote-validate wrapper (required for remote invocation)
+    which isolates the target plugin's config from the validator.
+    """
     cprint(f"\n{BOLD}[4/9] Validating plugin (CPV)...{NC}")
     if not shutil.which("uvx"):
         cprint(f"  {RED}uvx not found — install uv first (https://docs.astral.sh/uv/).{NC}")
@@ -308,7 +312,7 @@ def stage_validate(root: Path) -> None:
             "uvx",
             "--from", "git+https://github.com/Emasoft/claude-plugins-validation",
             "--with", "pyyaml",
-            "cpv-validate", str(root),
+            "cpv-remote-validate", "cpv-validate", str(root),
         ],
         cwd=root,
     )
