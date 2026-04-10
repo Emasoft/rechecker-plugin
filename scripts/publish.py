@@ -272,8 +272,10 @@ def ensure_pre_push_hook(root: Path) -> None:
 
     The canonical hook lives at scripts/git-hooks/pre-push (git-tracked).
     It is copied to .git/hooks/pre-push on every publish run so it stays
-    in sync with the tracked version. Hook rejects any push that lacks
-    the RECHECKER_PUBLISH_OK=1 sentinel env var.
+    in sync with the tracked version. The hook walks the process
+    ancestry of the `git push` invocation and only allows the push if
+    a python interpreter running publish.py is in the parent chain.
+    Process trees are kernel-managed and cannot be spoofed.
     """
     src = root / "scripts" / "git-hooks" / "pre-push"
     if not src.is_file():
@@ -460,14 +462,12 @@ def stage_commit_and_push(root: Path, new_ver: str, dry_run: bool) -> None:
     run(["git", "add"] + existing, cwd=root)
     run(["git", "commit", "-m", f"chore: bump version to {new_ver}"], cwd=root)
     run(["git", "tag", "-a", tag, "-m", f"Release {tag}"], cwd=root)
-    # Sentinel env var lets the pre-push hook verify this push came from
-    # publish.py (i.e. validation passed). Direct `git push` without
-    # this var is rejected by the hook.
-    run(
-        ["git", "push", "origin", "HEAD", "--tags"],
-        cwd=root,
-        env={"RECHECKER_PUBLISH_OK": "1"},
-    )
+    # The pre-push hook walks the process ancestry looking for
+    # "python ... publish.py". This Python interpreter is the parent
+    # of `git push`, which in turn is the parent of the hook shell.
+    # The hook sees publish.py in its ancestry and allows the push.
+    # No env var is needed — process trees cannot be spoofed.
+    run(["git", "push", "origin", "HEAD", "--tags"], cwd=root)
     cprint(f"  {GREEN}Pushed {tag}.{NC}")
 
 

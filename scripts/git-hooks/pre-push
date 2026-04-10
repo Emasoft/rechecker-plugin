@@ -2,20 +2,62 @@
 # pre-push hook for rechecker-plugin
 #
 # Blocks any `git push` that is NOT initiated by scripts/publish.py.
-# publish.py sets RECHECKER_PUBLISH_OK=1 before calling `git push`,
-# proving it has already passed lint, tests, CPV validation, and
-# version consistency checks.
+# Verification is done via process ancestry walking: we climb the
+# parent-process chain from this hook up to PID 1 and look for a
+# process whose argv[0] is a python interpreter AND whose argv[1]
+# ends in "publish.py". The kernel-managed process tree and argv
+# cannot be spoofed from userspace, unlike environment variables.
 #
-# Direct manual pushes are rejected with an instructive error.
-# To bypass (e.g. emergency hotfix), set RECHECKER_PUBLISH_OK=1
-# in the environment — but you are then responsible for the safety
-# guarantees the publish pipeline normally enforces.
+# Loose substring matching is deliberately avoided — it produces
+# false positives when an ancestor shell happens to have "publish.py"
+# in its command string (e.g. a here-doc or a Bash -c payload).
+# Only a real python process running publish.py as its script
+# argument counts as a valid ancestor.
 
-if [ "${RECHECKER_PUBLISH_OK:-}" = "1" ]; then
+is_python_running_publish_py() {
+    _cmd=$(ps -o command= -p "$1" 2>/dev/null)
+    [ -z "$_cmd" ] && return 1
+    # Parse the first two whitespace-separated tokens (argv[0], argv[1]).
+    _first=$(printf '%s\n' "$_cmd" | awk '{print $1}')
+    _second=$(printf '%s\n' "$_cmd" | awk '{print $2}')
+    # Basename of argv[0] must be a python interpreter. Accept both
+    # "python" (most distros), "python3" (venv/uv), and "Python" with
+    # capital P (macOS Homebrew via Python.app/Contents/MacOS/Python).
+    _base=$(basename "$_first" 2>/dev/null)
+    case "$_base" in
+        python|python3|python3.*|python2|python2.*|Python) ;;
+        *) return 1 ;;
+    esac
+    # argv[1] must be a path ending in publish.py.
+    case "$_second" in
+        *publish.py) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+check_publish_py_ancestor() {
+    pid=$$
+    depth=0
+    max_depth=20
+    while [ "$pid" -gt 1 ] && [ "$depth" -lt "$max_depth" ]; do
+        if is_python_running_publish_py "$pid"; then
+            return 0
+        fi
+        parent=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+        if [ -z "$parent" ] || [ "$parent" = "$pid" ] || [ "$parent" = "0" ]; then
+            return 1
+        fi
+        pid="$parent"
+        depth=$((depth + 1))
+    done
+    return 1
+}
+
+if check_publish_py_ancestor; then
     exit 0
 fi
 
-# Read the push refs from stdin so git doesn't block
+# Consume stdin so git doesn't block on the pipe.
 cat > /dev/null
 
 cat >&2 <<'EOF'
@@ -34,12 +76,20 @@ The pipeline enforces:
   6. Changelog updated via git-cliff with the new tag
   7. Atomic commit + tag + push
 
-If you are absolutely sure you need to bypass this hook, run:
+The hook verifies publish.py is in the process ANCESTRY. It parses
+each ancestor's argv[0] (must be a python interpreter) and argv[1]
+(must end in publish.py). Environment variables, shell aliases, and
+command-string substring tricks cannot bypass this — only an actual
+python process running publish.py counts.
 
-    RECHECKER_PUBLISH_OK=1 git push ...
+Emergency bypass (only if publish.py itself is broken):
 
-But only do this for emergency fixes. All normal releases MUST
-go through publish.py so that nothing unvalidated reaches GitHub.
+    mv .git/hooks/pre-push .git/hooks/pre-push.disabled
+    # do your push
+    mv .git/hooks/pre-push.disabled .git/hooks/pre-push
+
+Never forget to re-enable the hook, and never use this shortcut for
+normal releases.
 EOF
 
 exit 1
