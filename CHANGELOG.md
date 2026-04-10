@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.2.16] - 2026-04-10
+
+### Features
+
+- Enforce validation gate — require tests, add pre-push hook
 ## [3.2.15] - 2026-04-10
 
 ### Bug Fixes
