@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.2] - 2026-04-21
+
+### Miscellaneous Tasks
+
+- Re-add llm_externalizer_output/ to .gitignore as defensive fallback
+- Update uv.lock
 ## [3.3.1] - 2026-04-21
 
 ### Miscellaneous Tasks
