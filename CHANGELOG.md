@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.3] - 2026-04-21
+
+### Bug Fixes
+
+- *(deps)* Bump pytest 9.0.2→9.0.3 and pygments 2.19.2→2.20.0
+
+### Miscellaneous Tasks
+
+- Update uv.lock
 ## [3.3.2] - 2026-04-21
 
 ### Miscellaneous Tasks
