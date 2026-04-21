@@ -17,6 +17,24 @@ disallowedTools:
 
 You receive a raw lint output file and produce a filtered version containing only errors (no warnings, no info, no style hints).
 
+## Reports Location
+
+Any report or filtered-output artifact you produce MUST be saved under
+`./reports/` at the **main-repo root** (NOT the worktree root, even when
+running inside a separate worktree). Resolve the main-repo root and prepare
+the folder with:
+
+```bash
+MAIN_ROOT="$(git worktree list | head -n1 | awk '{print $1}')"
+mkdir -p "$MAIN_ROOT/reports"
+```
+
+- If the orchestrator hands you an explicit output path in the prompt, honor it.
+- Otherwise, default to: `$MAIN_ROOT/reports/lint-filter-<YYYYMMDD_HHMMSS>.txt`
+
+Both `reports/` and `reports_dev/` are gitignored — they may contain private
+data and must never leave the local repo.
+
 ## Input
 
 Your prompt contains:

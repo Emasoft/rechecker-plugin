@@ -16,6 +16,24 @@ Copy this checklist and track your progress:
 - [ ] Git repository with at least one commit
 - [ ] `${CLAUDE_PLUGIN_ROOT}` set (plugin installed)
 - [ ] LLM Externalizer MCP available (for review passes)
+- [ ] `reports/` and `reports_dev/` listed in the project's `.gitignore`
+      (add them if missing — reports contain private data)
+
+## Reports Location
+
+The skill's **final user-facing report** is written under `./reports/` at the
+**main-repo root** (NOT the worktree root, even though the pipeline runs in
+a dedicated worktree). Resolve it via:
+
+```bash
+MAIN_ROOT="$(git worktree list | head -n1 | awk '{print $1}')"
+mkdir -p "$MAIN_ROOT/reports"
+```
+
+Internal pipeline files (`.rechecker/reports/<UUID>/...`) remain inside the
+worktree — those are data-exchange between review and fix steps, not
+user-facing reports. Only the merged final report lands in
+`$MAIN_ROOT/reports/`.
 
 ## Instructions
 

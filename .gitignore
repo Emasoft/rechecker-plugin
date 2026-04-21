@@ -4,6 +4,9 @@
 # LLM Externalizer output
 llm_externalizer_output/
 
+# Agent reports (private data — per ~/.claude/CLAUDE.md rule)
+reports/
+
 # Dev folders (gitignored per convention)
 reports_dev/
 docs_dev/
