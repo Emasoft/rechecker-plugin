@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.0] - 2026-04-21
+
+### Documentation
+
+- Enforce ./reports/ at main-repo root for all agent output
+- Align agents to canonical reports/<component>/<ts±tz>-<slug> template
+- *(skill)* Compress Reports Location section under 5000-char limit
+
+### Features
+
+- Enforce canonical reports path — no carve-outs anywhere
 ## [3.2.17] - 2026-04-10
 
 ### Bug Fixes
