@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.1] - 2026-04-21
+
+### Miscellaneous Tasks
+
+- Clear both CPV warnings
 ## [3.3.0] - 2026-04-21
 
 ### Documentation
