@@ -5,6 +5,11 @@
 /reports/
 /reports_dev/
 
+# Defensive: LLM Externalizer falls back here if output_dir is not set.
+# The canonical path is $MAIN_ROOT/reports/llm-externalizer/ — but keep
+# this ignore in case a call forgets to override the default.
+/llm_externalizer_output/
+
 # Dev folders (gitignored per convention)
 /docs_dev/
 /scripts_dev/
