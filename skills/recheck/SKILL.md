@@ -21,29 +21,12 @@ Copy this checklist and track your progress:
 
 ## Reports Location
 
-**Same rule, same folder, for everything.** Every report the pipeline
-produces — review findings, fix summaries, lint captures, big-file audit,
-the final merged report — lives under the main-repo `reports/recheck/`
-tree, in a per-session subfolder, with a local-time-plus-GMT-offset
-timestamp. Always the main-repo root, NEVER the worktree root:
-
-```bash
-MAIN_ROOT="$(git worktree list | head -n1 | awk '{print $1}')"
-SESSION_TS="$(date +%Y%m%d_%H%M%S%z)"   # local time + GMT offset, e.g. 20260421_183012+0200
-REPORT_DIR="$MAIN_ROOT/reports/recheck/$SESSION_TS-$session_uuid"
-mkdir -p "$REPORT_DIR"
-FINAL_REPORT="$REPORT_DIR/report.md"
-```
-
-- `%Y%m%d_%H%M%S` — local date/time (never UTC)
-- `%z` — GMT offset in compact `±HHMM` form (filesystem-safe; never `±HH:MM`)
-
-Runtime state that is NOT a report (progress trackers, index files, batch
-lists, commit message files) may remain under `.rechecker/` inside the
-worktree — those are operational state, not reports.
-
-See `~/.claude/rules/agent-reports-location.md` for the full rule — both
-`/reports/` and `/reports_dev/` must be present in the project `.gitignore`.
+All reports (reviews, fixes, lint captures, big-file audit, merged final
+report) land under `$MAIN_ROOT/reports/recheck/<local-ts+tz>-<uuid>/` —
+always the main-repo root, never the worktree. Runtime state that is not
+a report (progress, index, batch lists, commit message) stays under
+`.rechecker/`. `/reports/` and `/reports_dev/` must both be in
+`.gitignore`. Full rule: `~/.claude/rules/agent-reports-location.md`.
 
 ## Instructions
 
