@@ -21,19 +21,28 @@ Copy this checklist and track your progress:
 
 ## Reports Location
 
-The skill's **final user-facing report** is written under `./reports/` at the
-**main-repo root** (NOT the worktree root, even though the pipeline runs in
-a dedicated worktree). Resolve it via:
+The skill's **final user-facing report** MUST be written under the main-repo
+`reports/recheck/` subfolder, with a local-time-plus-GMT-offset timestamp in
+the filename — always the main-repo root, NEVER this skill's worktree root:
 
 ```bash
 MAIN_ROOT="$(git worktree list | head -n1 | awk '{print $1}')"
-mkdir -p "$MAIN_ROOT/reports"
+REPORT_DIR="$MAIN_ROOT/reports/recheck"
+mkdir -p "$REPORT_DIR"
+TIMESTAMP="$(date +%Y%m%d_%H%M%S%z)"   # local time + GMT offset, e.g. 20260421_183012+0200
+FINAL_REPORT="$REPORT_DIR/$TIMESTAMP-rck-${session_uuid}.md"
 ```
+
+- `%Y%m%d_%H%M%S` — local date/time (never UTC)
+- `%z` — GMT offset in compact `±HHMM` form (filesystem-safe; never `±HH:MM`)
 
 Internal pipeline files (`.rechecker/reports/<UUID>/...`) remain inside the
 worktree — those are data-exchange between review and fix steps, not
 user-facing reports. Only the merged final report lands in
-`$MAIN_ROOT/reports/`.
+`$MAIN_ROOT/reports/recheck/`.
+
+See `~/.claude/rules/agent-reports-location.md` for the full rule — both
+`/reports/` and `/reports_dev/` must be present in the project `.gitignore`.
 
 ## Instructions
 

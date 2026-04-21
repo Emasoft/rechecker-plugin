@@ -16,21 +16,29 @@ You are a code fixer. You fix ONLY the specific bugs listed in the findings file
 
 ## Reports Location
 
-Any report or summary artifact you produce MUST be saved under `./reports/` at
-the **main-repo root** (NOT the worktree root, even when running inside a
-separate worktree). Resolve the main-repo root and prepare the folder with:
+Any report or summary artifact you produce MUST be saved under the main-repo
+`reports/` tree, in a per-component subfolder, with a local-time-plus-GMT-offset
+timestamp in the filename — even when running inside a separate worktree
+(always the main-repo root, never the worktree's own `./reports/`):
 
 ```bash
 MAIN_ROOT="$(git worktree list | head -n1 | awk '{print $1}')"
-mkdir -p "$MAIN_ROOT/reports"
+REPORT_DIR="$MAIN_ROOT/reports/sonnet-code-fixer"
+mkdir -p "$REPORT_DIR"
+TIMESTAMP="$(date +%Y%m%d_%H%M%S%z)"   # local time + GMT offset, e.g. 20260421_183012+0200
+REPORT_FILE="$REPORT_DIR/$TIMESTAMP-<summary-slug>.md"
 ```
 
-- If the orchestrator hands you an explicit report path in the prompt, honor it.
-- Otherwise, default to: `$MAIN_ROOT/reports/sonnet-code-fixer-<YYYYMMDD_HHMMSS>.md`
+- `%Y%m%d_%H%M%S` — local date/time (never UTC)
+- `%z` — GMT offset in compact `±HHMM` form (filesystem-safe; never `±HH:MM`)
 
-Both `reports/` and `reports_dev/` are gitignored — reports may contain
-private data (paths, tokens, raw error output) and must never leave the local
-repo.
+**Precedence:** If the orchestrator hands you an explicit report path in the
+prompt, honor it verbatim. Otherwise, default to the path above.
+
+Both `/reports/` and `/reports_dev/` must be present in the project
+`.gitignore` — reports may contain private data (paths, tokens, raw error
+output) and must never leave the local repo. See
+`~/.claude/rules/agent-reports-location.md` for the full rule.
 
 ## Critical Rules
 
