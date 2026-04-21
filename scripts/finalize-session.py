@@ -18,7 +18,6 @@ Output: JSON summary to stdout (session record + token usage).
 import argparse
 import json
 import os
-import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -77,38 +76,18 @@ def main() -> None:
         "tokens": token_data.get("summary", {}),
     }
 
-    # 4. Append to history.jsonl
+    # 4. Append to history.jsonl (operational state — not a report)
     history_file = rechecker_dir / "history.jsonl"
     with open(history_file, "a") as f:
         f.write(json.dumps(session) + "\n")
 
-    # 5. Move reports to permanent location
-    permanent_dir = rechecker_dir / "reports" / args.uuid
-    permanent_dir.mkdir(parents=True, exist_ok=True)
+    # 5. No move needed — reports already live at their canonical path:
+    #    $MAIN_ROOT/reports/recheck/<local-ts+tz>-<uuid>/
+    # triage.py wrote them there directly per
+    # ~/.claude/rules/agent-reports-location.md. Same rule, same folder,
+    # for everything; no carve-outs.
 
-    if report_dir.is_dir():
-        for item in report_dir.iterdir():
-            dest = permanent_dir / item.name
-            shutil.move(str(item), str(dest))
-        # Remove empty temp dir
-        try:
-            report_dir.rmdir()
-        except OSError:
-            pass
-        # Remove empty parent if it was reports_dev/
-        try:
-            report_dir.parent.rmdir()
-        except OSError:
-            pass
-
-    # 6. Move LLM Externalizer outputs
-    llm_output = Path("llm_externalizer_output")
-    if llm_output.is_dir():
-        for item in llm_output.iterdir():
-            if "rck" in item.name or "review" in item.name:
-                shutil.move(str(item), str(permanent_dir / item.name))
-
-    # 7. Print summary
+    # 6. Print summary
     print(json.dumps(session, indent=2))
 
 

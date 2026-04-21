@@ -21,25 +21,26 @@ Copy this checklist and track your progress:
 
 ## Reports Location
 
-The skill's **final user-facing report** MUST be written under the main-repo
-`reports/recheck/` subfolder, with a local-time-plus-GMT-offset timestamp in
-the filename — always the main-repo root, NEVER this skill's worktree root:
+**Same rule, same folder, for everything.** Every report the pipeline
+produces — review findings, fix summaries, lint captures, big-file audit,
+the final merged report — lives under the main-repo `reports/recheck/`
+tree, in a per-session subfolder, with a local-time-plus-GMT-offset
+timestamp. Always the main-repo root, NEVER the worktree root:
 
 ```bash
 MAIN_ROOT="$(git worktree list | head -n1 | awk '{print $1}')"
-REPORT_DIR="$MAIN_ROOT/reports/recheck"
+SESSION_TS="$(date +%Y%m%d_%H%M%S%z)"   # local time + GMT offset, e.g. 20260421_183012+0200
+REPORT_DIR="$MAIN_ROOT/reports/recheck/$SESSION_TS-$session_uuid"
 mkdir -p "$REPORT_DIR"
-TIMESTAMP="$(date +%Y%m%d_%H%M%S%z)"   # local time + GMT offset, e.g. 20260421_183012+0200
-FINAL_REPORT="$REPORT_DIR/$TIMESTAMP-rck-${session_uuid}.md"
+FINAL_REPORT="$REPORT_DIR/report.md"
 ```
 
 - `%Y%m%d_%H%M%S` — local date/time (never UTC)
 - `%z` — GMT offset in compact `±HHMM` form (filesystem-safe; never `±HH:MM`)
 
-Internal pipeline files (`.rechecker/reports/<UUID>/...`) remain inside the
-worktree — those are data-exchange between review and fix steps, not
-user-facing reports. Only the merged final report lands in
-`$MAIN_ROOT/reports/recheck/`.
+Runtime state that is NOT a report (progress trackers, index files, batch
+lists, commit message files) may remain under `.rechecker/` inside the
+worktree — those are operational state, not reports.
 
 See `~/.claude/rules/agent-reports-location.md` for the full rule — both
 `/reports/` and `/reports_dev/` must be present in the project `.gitignore`.
@@ -82,7 +83,7 @@ Files: <N> reviewed (<M> groups) | Lint: <status> | Security: <skipped/triggered
 Pass 1-3: <N issues fixed / clean>
 Commit: <yes (hash) / no fixes needed>
 Tokens: <total> (input/output/cache breakdown)
-Reports: .rechecker/reports/<UUID>/
+Reports: $MAIN_ROOT/reports/recheck/<SESSION_TS>-<UUID>/
 ---
 ```
 

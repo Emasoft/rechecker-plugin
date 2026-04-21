@@ -35,6 +35,33 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+
+def _resolve_main_root() -> Path:
+    """Return the main-repo root, even when running inside a linked worktree.
+
+    `git worktree list` always prints the main checkout first, so head -1 is
+    the canonical way to find the primary working tree without parsing
+    `.git` pointer files. Falls back to CWD if git is unreachable.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "worktree", "list"],
+            capture_output=True, text=True, check=True, timeout=10,
+        ).stdout
+        first_line = out.splitlines()[0]
+        return Path(first_line.split()[0])
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, IndexError, OSError):
+        return Path.cwd()
+
+
+def _session_timestamp() -> str:
+    """Local time + GMT offset in the canonical compact form.
+
+    Matches `date +%Y%m%d_%H%M%S%z` shell output (e.g. 20260421_183012+0200).
+    Never UTC, never `±HH:MM`. See ~/.claude/rules/agent-reports-location.md.
+    """
+    return datetime.now().astimezone().strftime("%Y%m%d_%H%M%S%z")
+
 # -- File classification -------------------------------------------------------
 
 SKIP_EXTENSIONS = frozenset({
@@ -544,7 +571,12 @@ def main() -> int:
     rck_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     rck_commit = _run(["git", "rev-parse", "HEAD"]).stdout.strip()
     rck_commit_short = rck_commit[:7]
-    report_dir = Path("reports_dev") / f"rck-{rck_uuid}"
+    # Canonical report path — same rule, same folder, for everything:
+    #   $MAIN_ROOT/reports/recheck/<local-ts+tz>-<uuid>/
+    # Always the main-repo root, never the worktree's own ./reports/.
+    session_ts = _session_timestamp()
+    main_root = _resolve_main_root()
+    report_dir = main_root / "reports" / "recheck" / f"{session_ts}-{rck_uuid}"
     report_dir.mkdir(parents=True, exist_ok=True)
 
     # Step 4: Token snapshot

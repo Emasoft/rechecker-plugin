@@ -6,9 +6,22 @@ StopFailure is notification-only: exit codes and output are ignored.
 """
 
 import json
+import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
+
+
+def _resolve_main_root(cwd: str) -> Path:
+    """Main-repo root (same whether we run in the main checkout or a worktree)."""
+    try:
+        out = subprocess.run(
+            ["git", "worktree", "list"],
+            capture_output=True, text=True, check=True, timeout=10, cwd=cwd,
+        ).stdout
+        return Path(out.splitlines()[0].split()[0])
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, IndexError, OSError):
+        return Path(cwd)
 
 
 def main() -> None:
@@ -26,11 +39,14 @@ def main() -> None:
     if not cwd:
         sys.exit(0)
 
-    log_dir = Path(cwd) / "reports_dev"
+    # Canonical path per ~/.claude/rules/agent-reports-location.md:
+    #   $MAIN_ROOT/reports/<component>/<local-ts+tz>-<slug>.<ext>
+    main_root = _resolve_main_root(cwd)
+    log_dir = main_root / "reports" / "stop-failure"
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = log_dir / "rechecker_api_errors.log"
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        ts = datetime.now().astimezone().strftime("%Y%m%d_%H%M%S%z")
+        log_file = log_dir / f"{ts}-api-errors.log"
         with open(log_file, "a") as f:
             f.write(f"[{ts}] StopFailure: error={error} details={error_details} session={session_id}\n")
     except OSError:

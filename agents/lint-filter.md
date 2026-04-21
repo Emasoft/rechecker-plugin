@@ -48,7 +48,7 @@ Your prompt contains:
 - A raw lint output file path to read
 - A filtered output file path to write
 
-Example: `"Filter lint output: reports_dev/rck-20260326_140000/pass0-lint-raw.txt — Write errors-only to: reports_dev/rck-20260326_140000/pass0-lint-errors.txt"`
+Example: `"Filter lint output: $MAIN_ROOT/reports/recheck/20260421_183012+0200-<session>/pass0-lint-raw.txt — Write errors-only to: $MAIN_ROOT/reports/lint-filter/20260421_183012+0200-pass0-errors.txt"`
 
 ## Protocol
 

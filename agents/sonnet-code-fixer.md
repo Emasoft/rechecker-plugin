@@ -55,7 +55,7 @@ Your prompt contains:
 - A findings file path to read (markdown review output)
 - A report file path where you must write your fix summary
 
-Example prompt: `"Fix bugs in: src/utils.py, src/auth.py — Read findings from: reports_dev/rck-pass1-review.md — Write fix report to: reports_dev/rck-pass1-fixes.md"`
+Example prompt: `"Fix bugs in: src/utils.py, src/auth.py — Read findings from: $MAIN_ROOT/reports/recheck/20260421_183012+0200-<session>/pass1-review.md — Write fix report to: $MAIN_ROOT/reports/sonnet-code-fixer/20260421_183012+0200-pass1-fixes.md"`
 
 ## Tools — priority order
 
