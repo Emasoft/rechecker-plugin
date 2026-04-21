@@ -1,8 +1,5 @@
-# Rechecker runtime artifacts
+# Rechecker runtime artifacts (operational state, not reports)
 .rechecker/
-
-# LLM Externalizer output
-llm_externalizer_output/
 
 # Agent reports (private data — per ~/.claude/rules/agent-reports-location.md)
 /reports/
@@ -43,7 +40,6 @@ build/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
-uv.lock
 
 # Node
 node_modules/
