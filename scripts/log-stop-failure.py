@@ -39,10 +39,12 @@ def main() -> None:
     if not cwd:
         sys.exit(0)
 
-    # Canonical path per ~/.claude/rules/agent-reports-location.md:
-    #   $MAIN_ROOT/reports/<component>/<local-ts+tz>-<slug>.<ext>
+    # All rechecker-plugin output is rooted under reports/rechecker/ so the
+    # whole plugin's footprint is one path the user can find, back up, or
+    # clean — even when the hook fires inside a linked worktree (always
+    # the main-repo root, never the worktree's own ./reports/).
     main_root = _resolve_main_root(cwd)
-    log_dir = main_root / "reports" / "stop-failure"
+    log_dir = main_root / "reports" / "rechecker" / "stop-failure"
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().astimezone().strftime("%Y%m%d_%H%M%S%z")

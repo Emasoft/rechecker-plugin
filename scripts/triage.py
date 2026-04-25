@@ -571,12 +571,13 @@ def main() -> int:
     rck_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     rck_commit = _run(["git", "rev-parse", "HEAD"]).stdout.strip()
     rck_commit_short = rck_commit[:7]
-    # Canonical report path — same rule, same folder, for everything:
-    #   $MAIN_ROOT/reports/recheck/<local-ts+tz>-<uuid>/
+    # Canonical report path — every artifact this plugin writes lives under
+    # one folder so the user can find/back-up/clean it with a single path:
+    #   $MAIN_ROOT/reports/rechecker/<local-ts+tz>-<uuid>/
     # Always the main-repo root, never the worktree's own ./reports/.
     session_ts = _session_timestamp()
     main_root = _resolve_main_root()
-    report_dir = main_root / "reports" / "recheck" / f"{session_ts}-{rck_uuid}"
+    report_dir = main_root / "reports" / "rechecker" / f"{session_ts}-{rck_uuid}"
     report_dir.mkdir(parents=True, exist_ok=True)
 
     # Step 4: Token snapshot

@@ -21,12 +21,17 @@ Copy this checklist and track your progress:
 
 ## Reports Location
 
-All reports (reviews, fixes, lint captures, big-file audit, merged final
-report) land under `$MAIN_ROOT/reports/recheck/<local-ts+tz>-<uuid>/` —
-always the main-repo root, never the worktree. Runtime state that is not
-a report (progress, index, batch lists, commit message) stays under
-`.rechecker/`. `/reports/` and `/reports_dev/` must both be in
-`.gitignore`. Full rule: `~/.claude/rules/agent-reports-location.md`.
+Every artifact this plugin writes lives under one canonical root —
+`$MAIN_ROOT/reports/rechecker/` — even when the run starts inside a
+linked worktree (always the main-repo root, never the worktree's own
+`./reports/`). Per-session reviews/fixes/lint captures land in
+`$MAIN_ROOT/reports/rechecker/<local-ts+tz>-<uuid>/`; sub-agent output
+goes to `reports/rechecker/sonnet-code-fixer/` and
+`reports/rechecker/lint-filter/`; the StopFailure hook writes to
+`reports/rechecker/stop-failure/`. Runtime state that is not a report
+(progress, index, batch lists, commit message) stays under `.rechecker/`.
+`/reports/` and `/reports_dev/` must both be in `.gitignore`. Full rule:
+`~/.claude/rules/agent-reports-location.md`.
 
 ## Instructions
 
@@ -66,7 +71,7 @@ Files: <N> reviewed (<M> groups) | Lint: <status> | Security: <skipped/triggered
 Pass 1-3: <N issues fixed / clean>
 Commit: <yes (hash) / no fixes needed>
 Tokens: <total> (input/output/cache breakdown)
-Reports: $MAIN_ROOT/reports/recheck/<SESSION_TS>-<UUID>/
+Reports: $MAIN_ROOT/reports/rechecker/<SESSION_TS>-<UUID>/
 ---
 ```
 

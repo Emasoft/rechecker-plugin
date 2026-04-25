@@ -82,10 +82,12 @@ def main() -> None:
         f.write(json.dumps(session) + "\n")
 
     # 5. No move needed — reports already live at their canonical path:
-    #    $MAIN_ROOT/reports/recheck/<local-ts+tz>-<uuid>/
-    # triage.py wrote them there directly per
-    # ~/.claude/rules/agent-reports-location.md. Same rule, same folder,
-    # for everything; no carve-outs.
+    #    $MAIN_ROOT/reports/rechecker/<local-ts+tz>-<uuid>/
+    # triage.py wrote them there directly. Every artifact from this plugin
+    # (triage sessions, sonnet-code-fixer, lint-filter, stop-failure logs)
+    # is rooted under reports/rechecker/ so the whole plugin's output is
+    # one cleanable, ignorable subtree on the main-repo root — never the
+    # worktree's own ./reports/.
 
     # 6. Print summary
     print(json.dumps(session, indent=2))

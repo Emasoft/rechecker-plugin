@@ -126,3 +126,58 @@ def test_publish_requires_bump_flag() -> None:
     r = _run([str(SCRIPTS / "publish.py")])
     assert r.returncode == 2
     assert "required" in r.stderr.lower() or "one of" in r.stderr.lower()
+
+
+# --- Single-root reports path guard ----------------------------------------
+# Every artifact this plugin writes must land under reports/rechecker/.
+# These tests catch a regression where a rename or refactor splits output
+# back into per-component top-level folders (reports/recheck/,
+# reports/lint-filter/, reports/sonnet-code-fixer/, reports/stop-failure/).
+# All sub-component subfolders are still allowed, but only as children
+# of reports/rechecker/.
+
+_PLUGIN_FILES_WITH_REPORT_PATHS = [
+    SCRIPTS / "triage.py",
+    SCRIPTS / "log-stop-failure.py",
+    SCRIPTS / "finalize-session.py",
+    REPO_ROOT / "agents" / "sonnet-code-fixer.md",
+    REPO_ROOT / "agents" / "lint-filter.md",
+    REPO_ROOT / "skills" / "recheck" / "SKILL.md",
+]
+
+
+def test_no_legacy_report_paths_in_plugin_files() -> None:
+    """No plugin file may reference the pre-migration top-level report folders."""
+    legacy = (
+        "reports/recheck/",
+        "reports/lint-filter",
+        "reports/sonnet-code-fixer",
+        "reports/stop-failure",
+    )
+    offenders: list[str] = []
+    for path in _PLUGIN_FILES_WITH_REPORT_PATHS:
+        text = path.read_text()
+        for needle in legacy:
+            if needle in text:
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: contains '{needle}'")
+    assert not offenders, (
+        "All plugin output must live under reports/rechecker/. Offenders:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_triage_writes_under_reports_rechecker() -> None:
+    """triage.py source pins the per-session dir to reports/rechecker/."""
+    text = (SCRIPTS / "triage.py").read_text()
+    assert '"reports" / "rechecker"' in text, (
+        'triage.py must build session dir from "reports" / "rechecker".'
+    )
+
+
+def test_log_stop_failure_writes_under_reports_rechecker() -> None:
+    """log-stop-failure.py source pins the log dir to reports/rechecker/stop-failure."""
+    text = (SCRIPTS / "log-stop-failure.py").read_text()
+    assert '"reports" / "rechecker" / "stop-failure"' in text, (
+        'log-stop-failure.py must build log dir from '
+        '"reports" / "rechecker" / "stop-failure".'
+    )

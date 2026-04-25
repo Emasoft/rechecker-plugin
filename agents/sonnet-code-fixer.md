@@ -16,14 +16,16 @@ You are a code fixer. You fix ONLY the specific bugs listed in the findings file
 
 ## Reports Location
 
-Any report or summary artifact you produce MUST be saved under the main-repo
-`reports/` tree, in a per-component subfolder, with a local-time-plus-GMT-offset
-timestamp in the filename — even when running inside a separate worktree
-(always the main-repo root, never the worktree's own `./reports/`):
+Every artifact you produce MUST be saved under the rechecker plugin's
+single canonical reports root — always `<main-repo>/reports/rechecker/`,
+never the worktree's own `./reports/`. The whole plugin (triage sessions,
+sonnet-code-fixer, lint-filter, stop-failure logs) writes under one tree
+so the user can find, back up, or clean the entire plugin's output with
+one path. Use a local-time-plus-GMT-offset timestamp in the filename:
 
 ```bash
 MAIN_ROOT="$(git worktree list | head -n1 | awk '{print $1}')"
-REPORT_DIR="$MAIN_ROOT/reports/sonnet-code-fixer"
+REPORT_DIR="$MAIN_ROOT/reports/rechecker/sonnet-code-fixer"
 mkdir -p "$REPORT_DIR"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S%z)"   # local time + GMT offset, e.g. 20260421_183012+0200
 REPORT_FILE="$REPORT_DIR/$TIMESTAMP-<summary-slug>.md"
@@ -55,7 +57,7 @@ Your prompt contains:
 - A findings file path to read (markdown review output)
 - A report file path where you must write your fix summary
 
-Example prompt: `"Fix bugs in: src/utils.py, src/auth.py — Read findings from: $MAIN_ROOT/reports/recheck/20260421_183012+0200-<session>/pass1-review.md — Write fix report to: $MAIN_ROOT/reports/sonnet-code-fixer/20260421_183012+0200-pass1-fixes.md"`
+Example prompt: `"Fix bugs in: src/utils.py, src/auth.py — Read findings from: $MAIN_ROOT/reports/rechecker/20260421_183012+0200-<session>/pass1-review.md — Write fix report to: $MAIN_ROOT/reports/rechecker/sonnet-code-fixer/20260421_183012+0200-pass1-fixes.md"`
 
 ## Tools — priority order
 
