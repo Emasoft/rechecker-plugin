@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.6] - 2026-04-25
+
+### Documentation
+
+- *(publish)* Document why uv.lock must stay in version_files
 ## [3.3.5] - 2026-04-25
 
 ### Bug Fixes
