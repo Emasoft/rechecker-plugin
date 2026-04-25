@@ -7,7 +7,7 @@ packages = ["scripts"]
 
 [project]
 name = "rechecker-plugin"
-version = "3.3.3"
+version = "3.3.4"
 description = "Prompts Claude to review and fix code after git commits using a blocking /recheck skill"
 readme = "README.md"
 requires-python = ">=3.12"

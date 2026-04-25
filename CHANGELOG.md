@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.4] - 2026-04-25
+
+### Features
+
+- Route all rechecker output to <main-root>/reports/rechecker/
+
+### Miscellaneous Tasks
+
+- Gitignore .janitor/ runtime state and sync uv.lock to 3.3.3
 ## [3.3.3] - 2026-04-21
 
 ### Bug Fixes
