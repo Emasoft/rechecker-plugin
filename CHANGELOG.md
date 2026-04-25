@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.5] - 2026-04-25
+
+### Bug Fixes
+
+- *(publish)* Refresh uv.lock during version bump
+
+### Miscellaneous Tasks
+
+- Sync uv.lock to 3.3.4
 ## [3.3.4] - 2026-04-25
 
 ### Features
