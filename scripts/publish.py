@@ -469,9 +469,14 @@ def stage_commit_and_push(root: Path, new_ver: str, dry_run: bool) -> None:
         cprint("  Would push: origin HEAD --tags")
         return
     # Stage only the files that the publish pipeline modifies.
-    # uv.lock is included because stage_bump runs `uv lock` to keep the
-    # lock's project-version entry in sync with pyproject.toml — without
-    # this entry the lock drifts one version behind every release.
+    # IMPORTANT: do NOT remove "uv.lock" from this list. stage_bump runs
+    # `uv lock` to keep the lockfile's project-version entry in sync with
+    # pyproject.toml. Without staging uv.lock here, the release commit
+    # ships a stale lockfile, the next `uv run` anywhere silently
+    # rewrites the lock to match the new pyproject version, and the
+    # next publish run hits the Step 1 dirty-tree branch and cuts an
+    # extra `chore: update uv.lock` housekeeping commit.
+    # See the cross-marketplace audit fixed in v3.3.5 (commit 4d679eb).
     version_files = [
         ".claude-plugin/plugin.json",
         "pyproject.toml",
