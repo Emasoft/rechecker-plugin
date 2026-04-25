@@ -1,6 +1,9 @@
 # Rechecker runtime artifacts (operational state, not reports)
 .rechecker/
 
+# Janitor runtime artifacts (ai-maestro-janitor plugin state, not reports)
+.janitor/
+
 # Agent reports (private data — per ~/.claude/rules/agent-reports-location.md)
 /reports/
 /reports_dev/
