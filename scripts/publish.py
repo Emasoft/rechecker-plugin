@@ -377,12 +377,32 @@ def stage_consistency(root: Path) -> None:
 
 
 def stage_bump(root: Path, new_ver: str, dry_run: bool) -> None:
-    """Step 6: Bump version."""
+    """Step 6: Bump version, then refresh uv.lock so it stays in sync.
+
+    Bumping pyproject.toml leaves uv.lock one version behind (its
+    rechecker-plugin entry still names the OLD version). The next time
+    `uv run` is invoked anywhere — even an unrelated test run in a fresh
+    shell — uv silently rewrites uv.lock to match pyproject, dirtying
+    the working tree. Refreshing the lock here, before the commit stage
+    that picks the files to stage, keeps the lock in the same commit as
+    pyproject.toml and prevents the per-release uv.lock drift commit.
+    """
     cprint(f"\n{BOLD}[6/9] Bumping version...{NC}")
     if not do_bump(root, new_ver, dry_run=dry_run):
         cprint(f"  {RED}Version bump failed.{NC}")
         sys.exit(1)
     cprint(f"  {GREEN}Version bumped to {new_ver}.{NC}")
+    if dry_run:
+        cprint("  Would refresh uv.lock to match new pyproject.toml.")
+        return
+    if not shutil.which("uv"):
+        cprint(f"  {YELLOW}uv not on PATH — skipping lock refresh.{NC}")
+        return
+    # `uv lock` rewrites uv.lock from pyproject.toml without installing.
+    # It is the cheapest way to keep the lock entry's version field in
+    # sync with the just-bumped pyproject.toml.
+    run(["uv", "lock"], cwd=root)
+    cprint(f"  {GREEN}uv.lock refreshed.{NC}")
 
 
 def stage_changelog(root: Path, new_ver: str, dry_run: bool) -> None:
@@ -448,12 +468,16 @@ def stage_commit_and_push(root: Path, new_ver: str, dry_run: bool) -> None:
         cprint(f"  Would tag: {tag}")
         cprint("  Would push: origin HEAD --tags")
         return
-    # Stage only the files that the publish pipeline modifies
+    # Stage only the files that the publish pipeline modifies.
+    # uv.lock is included because stage_bump runs `uv lock` to keep the
+    # lock's project-version entry in sync with pyproject.toml — without
+    # this entry the lock drifts one version behind every release.
     version_files = [
         ".claude-plugin/plugin.json",
         "pyproject.toml",
         "README.md",
         "CHANGELOG.md",
+        "uv.lock",
     ]
     # Also stage any __version__ files that were updated
     for py in (root / "scripts").glob("*.py"):
