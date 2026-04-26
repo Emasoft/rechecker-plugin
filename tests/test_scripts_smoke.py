@@ -181,3 +181,32 @@ def test_log_stop_failure_writes_under_reports_rechecker() -> None:
         'log-stop-failure.py must build log dir from '
         '"reports" / "rechecker" / "stop-failure".'
     )
+
+
+# --- publish.py uv.lock-staging guard --------------------------------------
+# Regression guard for the v3.3.5 fix (commit 4d679eb): publish.py must
+# stage "uv.lock" so the lockfile lands in the version-bump commit. Without
+# this, every release ships with uv.lock one version behind pyproject.toml,
+# the next `uv run` silently rewrites the lock, and the next publish run
+# cuts an extra `chore: update uv.lock` housekeeping commit. The defensive
+# comment in v3.3.6 (commit 6321a88) is the documentation; this test is
+# the executable enforcement.
+
+
+def test_publish_stages_uv_lock_in_version_files() -> None:
+    """publish.py's stage_commit_and_push must include "uv.lock" in version_files."""
+    text = (SCRIPTS / "publish.py").read_text()
+    # Locate the version_files block and assert "uv.lock" is inside it.
+    # The block is the only `version_files = [` literal in the file.
+    marker = "version_files = ["
+    start = text.find(marker)
+    assert start != -1, "publish.py must declare a version_files list literal"
+    end = text.find("]", start)
+    assert end != -1, "version_files list literal must be closed"
+    block = text[start : end + 1]
+    assert '"uv.lock"' in block, (
+        'publish.py version_files must include "uv.lock". Without this entry, '
+        "every release leaves uv.lock one version behind pyproject.toml. "
+        "See commit 4d679eb (v3.3.5) for the original fix and 6321a88 (v3.3.6) "
+        "for the inline rationale comment that guards this entry."
+    )
