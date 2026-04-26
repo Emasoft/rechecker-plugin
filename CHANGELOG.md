@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.7] - 2026-04-26
+
+### Testing
+
+- *(publish)* Regression-guard uv.lock in version_files
 ## [3.3.6] - 2026-04-25
 
 ### Documentation
